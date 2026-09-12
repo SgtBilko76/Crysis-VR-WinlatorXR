@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -119,7 +119,7 @@
       <ImportLibrary>$(OutDir)CrysisMod.lib</ImportLibrary>
       <TargetMachine>MachineX86</TargetMachine>
       <AdditionalLibraryDirectories>ThirdParty\openxr\lib\win32;ThirdParty\bhaptics\bin\win32;ThirdParty\ForceTubeVR\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>dxgi.lib;d3d9.lib;d3d10_1.lib;d3d11.lib;openxr_loader.lib;haptic_library.lib;ForceTubeVR_API_x32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d9.lib;d3d10_1.lib;d3d11.lib;openxr_loader.lib;ws2_32.lib;haptic_library.lib;ForceTubeVR_API_x32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Message>Copy VRMod files to Crysis installation</Message>
@@ -158,7 +158,7 @@
       <SubSystem>Windows</SubSystem>
       <ImportLibrary>$(OutDir)CrysisMod.lib</ImportLibrary>
       <TargetMachine>MachineX64</TargetMachine>
-      <AdditionalDependencies>dxgi.lib;d3d9.lib;d3d10_1.lib;d3d11.lib;openxr_loader.lib;haptic_library.lib;ForceTubeVR_API_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d9.lib;d3d10_1.lib;d3d11.lib;openxr_loader.lib;ws2_32.lib;haptic_library.lib;ForceTubeVR_API_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>ThirdParty\openxr\lib;ThirdParty\bhaptics\bin\win64;ThirdParty\ForceTubeVR\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
     </Link>
@@ -204,7 +204,7 @@
       <BaseAddress>0x39000000</BaseAddress>
       <TargetMachine>MachineX86</TargetMachine>
       <AdditionalLibraryDirectories>ThirdParty\openxr\lib\win32;ThirdParty\bhaptics\bin\win32;ThirdParty\ForceTubeVR\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>dxgi.lib;d3d9.lib;d3d10_1.lib;d3d11.lib;openxr_loader.lib;haptic_library.lib;ForceTubeVR_API_x32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d9.lib;d3d10_1.lib;d3d11.lib;openxr_loader.lib;ws2_32.lib;haptic_library.lib;ForceTubeVR_API_x32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Message>Copy VRMod files to Crysis installation</Message>
@@ -247,7 +247,7 @@
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
       <BaseAddress>0x39000000</BaseAddress>
       <TargetMachine>MachineX64</TargetMachine>
-      <AdditionalDependencies>dxgi.lib;d3d9.lib;d3d10_1.lib;d3d11.lib;openxr_loader.lib;haptic_library.lib;ForceTubeVR_API_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d9.lib;d3d10_1.lib;d3d11.lib;openxr_loader.lib;ws2_32.lib;haptic_library.lib;ForceTubeVR_API_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>ThirdParty\openxr\lib;ThirdParty\bhaptics\bin\win64;ThirdParty\ForceTubeVR\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
@@ -517,6 +517,7 @@
     <ClCompile Include="VR\VRGui.cpp" />
     <ClCompile Include="VR\VRHaptics.cpp" />
     <ClCompile Include="VR\VRRenderer.cpp" />
+    <ClCompile Include="VR\WinlatorXR.cpp" />
     <ClCompile Include="VR\VRManager.cpp" />
     <ClCompile Include="VR\VRRenderUtils.cpp" />
     <ClCompile Include="Weapon.cpp" />
@@ -936,6 +937,7 @@
     <ClInclude Include="VR\VRGui.h" />
     <ClInclude Include="VR\VRHaptics.h" />
     <ClInclude Include="VR\VRRenderer.h" />
+    <ClInclude Include="VR\WinlatorXR.h" />
     <ClInclude Include="VR\VRManager.h" />
     <ClInclude Include="VR\VRRenderUtils.h" />
     <ClInclude Include="Weapon.h" />
@@ -965,6 +967,20 @@
       <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Shaders\generated\ShaderDrawTexturePS.h</HeaderFileOutput>
       <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_ShaderDrawTexturePS</VariableName>
       <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Shaders\generated\ShaderDrawTexturePS.h</HeaderFileOutput>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.1</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.1</ShaderModel>
+    </FxCompile>
+    <FxCompile Include="Shaders\SolidColor.ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.1</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.1</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">g_ShaderSolidColorPS</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Shaders\generated\ShaderSolidColorPS.h</HeaderFileOutput>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_ShaderSolidColorPS</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Shaders\generated\ShaderSolidColorPS.h</HeaderFileOutput>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.1</ShaderModel>

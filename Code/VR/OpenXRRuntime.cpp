@@ -10,6 +10,8 @@
 #include "VRManager.h"
 #include "VRRenderer.h"
 #include "Menus/FlashMenuObject.h"
+#include "WinlatorXR.h"
+#include <tlhelp32.h>
 
 OpenXRRuntime g_xrRuntime;
 OpenXRRuntime *gXR = &g_xrRuntime;
@@ -203,18 +205,65 @@ namespace
 
 bool OpenXRRuntime::Init()
 {
-	if (!CreateInstance())
-		return false;
-
 	memset(&m_hudPose, 0, sizeof(m_hudPose));
 	m_hudPose.orientation.w = 1;
 	m_hudPose.position.z = -2.f;
+
+	m_usingWinlatorXR = WinlatorXR::IsLikelyPresent();
+	if (m_usingWinlatorXR)
+	{
+		// Running under WinlatorXR (Wine on a standalone Quest/Pico headset): there is no OpenXR runtime,
+		// so use WinlatorXR's XrAPI UDP protocol for poses/input and compose the stereo frame ourselves.
+		CryLogAlways("Detected WinlatorXR environment - using WinlatorXR XrAPI backend instead of OpenXR");
+		WinlatorXR::Init();
+
+		// The engine's crash handler can't attribute addresses to modules under Wine, so dump the module
+		// map once - it makes call stacks in the log readable.
+		HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, GetCurrentProcessId());
+		if (snapshot != INVALID_HANDLE_VALUE)
+		{
+			MODULEENTRY32 me;
+			me.dwSize = sizeof(me);
+			if (Module32First(snapshot, &me))
+			{
+				do
+				{
+					CryLogAlways("[WinlatorXR] module %-28s base 0x%p size 0x%08X", me.szModule, (void*)me.modBaseAddr, (unsigned)me.modBaseSize);
+				} while (Module32Next(snapshot, &me));
+			}
+			CloseHandle(snapshot);
+		}
+
+		// symmetric 90 degree placeholder FOV until the first packet reports the headset's real one
+		for (int eye = 0; eye < 2; ++eye)
+		{
+			m_renderViews[eye].type = XR_TYPE_VIEW;
+			m_renderViews[eye].pose.orientation.w = 1.f;
+			m_renderViews[eye].fov.angleLeft = -DEG2RAD(45.f);
+			m_renderViews[eye].fov.angleRight = DEG2RAD(45.f);
+			m_renderViews[eye].fov.angleUp = DEG2RAD(45.f);
+			m_renderViews[eye].fov.angleDown = -DEG2RAD(45.f);
+		}
+
+		m_input.InitWinlatorXR();
+		return true;
+	}
+
+	if (!CreateInstance())
+		return false;
 
 	return true;
 }
 
 void OpenXRRuntime::Shutdown()
 {
+	if (m_usingWinlatorXR)
+	{
+		m_input.Shutdown();
+		WinlatorXR::Shutdown();
+		return;
+	}
+
 	m_input.Shutdown();
 
 	xrDestroySwapchain(m_stereoSwapchain);
@@ -232,6 +281,13 @@ void OpenXRRuntime::Shutdown()
 
 void OpenXRRuntime::GetD3D11Requirements(LUID* adapterLuid, D3D_FEATURE_LEVEL* minRequiredLevel)
 {
+	if (m_usingWinlatorXR)
+	{
+		// no D3D11 interop needed: frames are composed into the game's own D3D10 back buffer
+		if (adapterLuid) memset(adapterLuid, 0, sizeof(*adapterLuid));
+		if (minRequiredLevel) *minRequiredLevel = (D3D_FEATURE_LEVEL)0;
+		return;
+	}
 	XrGraphicsRequirementsD3D11KHR d3dReqs{};
 	d3dReqs.type = XR_TYPE_GRAPHICS_REQUIREMENTS_D3D11_KHR;
 	XR_CheckResult(xrGetD3D11GraphicsRequirementsKHR(m_instance, m_system, &d3dReqs), "getting D3D11 requirements", m_instance);
@@ -243,6 +299,8 @@ void OpenXRRuntime::GetD3D11Requirements(LUID* adapterLuid, D3D_FEATURE_LEVEL* m
 
 void OpenXRRuntime::CreateSession(ID3D11Device* device)
 {
+	if (m_usingWinlatorXR)
+		return;
 	if (m_session)
 	{
 		m_input.Shutdown();
@@ -272,6 +330,14 @@ void OpenXRRuntime::CreateSession(ID3D11Device* device)
 
 void OpenXRRuntime::AwaitFrame()
 {
+	if (m_usingWinlatorXR)
+	{
+		// WinlatorXR has no blocking wait: it streams poses over UDP at the headset's refresh rate, so
+		// just pick up the most recent one for this frame
+		UpdateWinlatorXRPose();
+		return;
+	}
+
 	if (!m_session)
 		return;
 
@@ -320,6 +386,33 @@ void OpenXRRuntime::AwaitFrame()
 
 void OpenXRRuntime::FinishFrame()
 {
+	if (m_usingWinlatorXR)
+	{
+		// The frame itself was already composed into the back buffer by VRManager; all that is left is
+		// telling WinlatorXR how to display it. fov 0/0 = "keep the headset's native FOV", which it then
+		// reports back in every packet and which is what our cameras render with. Controller vibration
+		// is a per-frame level (WinlatorXR applies its own decay), so forward the current amplitudes.
+		WinlatorXR::SendState(m_input.GetWinlatorHapticAmplitude(0), m_input.GetWinlatorHapticAmplitude(1), m_winlatorModeVr, m_winlatorMode3d, 0.f, 0.f);
+
+		if (UseWinlatorAER() && m_winlatorModeVr == 1)
+			AdvanceAerEye();
+
+		// periodic frame-rate report: there is no overlay/tooling on the headset, and the frame rate
+		// decides how much WinlatorXR's reprojection has to warp our (stale) frames
+		float now = gEnv->pTimer->GetAsyncCurTime();
+		++m_winlatorFrameCount;
+		if (m_winlatorLastFpsReport == 0.f)
+			m_winlatorLastFpsReport = now;
+		else if (now - m_winlatorLastFpsReport >= 10.f)
+		{
+			Vec2i size = gVR->GetRenderSize();
+			CryLogAlways("[WinlatorXR] %.1f fps (modeVr %d, mode3d %d, %s, %dx%d per eye)", m_winlatorFrameCount / (now - m_winlatorLastFpsReport), m_winlatorModeVr, m_winlatorMode3d, UseWinlatorAER() ? "AER" : "SBS", size.x, size.y);
+			m_winlatorFrameCount = 0;
+			m_winlatorLastFpsReport = now;
+		}
+		return;
+	}
+
 	if (!m_frameStarted || !m_sessionActive)
 		return;
 
@@ -437,6 +530,17 @@ void OpenXRRuntime::GetFov(int eye, float& tanl, float& tanr, float& tant, float
 
 Vec2i OpenXRRuntime::GetRecommendedRenderSize() const
 {
+	if (m_usingWinlatorXR)
+	{
+		// The eye is rendered at the headset's (symmetric) FOV aspect; height is the resolution knob.
+		// Under WinlatorXR the eye image *is* the game's back buffer (side-by-side halves or, with AER,
+		// the whole frame), which WinlatorXR scales onto the X screen and then onto its square per-eye
+		// framebuffers, so the container screen size should keep this same aspect.
+		int height = max(g_pGameCVars->vr_winlatorxr_render_height, 240);
+		int width = (int)(height * tanf(DEG2RAD(m_winlatorFovH) / 2.f) / tanf(DEG2RAD(m_winlatorFovV) / 2.f));
+		return Vec2i(width, height);
+	}
+
 	uint32_t viewCount = 0;
 	XrViewConfigurationView views[2] = {};
 	views[0].type = XR_TYPE_VIEW_CONFIGURATION_VIEW;
@@ -448,7 +552,7 @@ Vec2i OpenXRRuntime::GetRecommendedRenderSize() const
 
 void OpenXRRuntime::SubmitEyes(ID3D11Texture2D* leftEyeTex, const RectF& leftArea, ID3D11Texture2D* rightEyeTex, const RectF& rightArea)
 {
-	if (!m_sessionActive)
+	if (!m_sessionActive || m_usingWinlatorXR)
 		return;
 
 	D3D11_TEXTURE2D_DESC lDesc, rDesc;
@@ -499,7 +603,7 @@ void OpenXRRuntime::SubmitEyes(ID3D11Texture2D* leftEyeTex, const RectF& leftAre
 
 void OpenXRRuntime::SubmitHud(ID3D11Texture2D* hudTex)
 {
-	if (!m_sessionActive)
+	if (!m_sessionActive || m_usingWinlatorXR)
 		return;
 
 	D3D11_TEXTURE2D_DESC desc;
@@ -762,5 +866,96 @@ void OpenXRRuntime::CreateHudSwapchain(int width, int height)
 	for (const auto& image: images)
 	{
 		m_hudImages.push_back(image.texture);
+	}
+}
+
+// ---------------------------------------------------------------------------------------------------
+// WinlatorXR backend
+// ---------------------------------------------------------------------------------------------------
+
+bool OpenXRRuntime::UseWinlatorAER() const
+{
+	return m_usingWinlatorXR && g_pGameCVars && g_pGameCVars->vr_winlatorxr_aer != 0;
+}
+
+void OpenXRRuntime::UpdateWinlatorXRPose()
+{
+	WinlatorXR::InputState state = WinlatorXR::GetLatestState();
+	if (!state.valid)
+	{
+		// keep whatever we had (initially: invalid) until the first packet arrives
+		return;
+	}
+
+	float qx = state.hmdQx, qy = state.hmdQy, qz = state.hmdQz, qw = state.hmdQw;
+	float len = sqrtf(qx * qx + qy * qy + qz * qz + qw * qw);
+	if (len < 1e-4f)
+	{
+		// degenerate (all-zero) quaternion, e.g. before the runtime has produced its first real pose
+		return;
+	}
+	qx /= len; qy /= len; qz /= len; qw /= len;
+
+	// Lift LOCAL-space poses to floor level: protocol 0.5 reports the head's height above the floor
+	// (STAGE space), so offset = altitude - local y. Kept as a running value (it only changes if
+	// WinlatorXR recentres) and shared with the controller poses via GetWinlatorFloorOffset().
+	if (state.hmdAltitude > 0.3f && state.hmdAltitude < 3.f)
+	{
+		float offset = state.hmdAltitude - state.hmdY;
+		if (!m_winlatorFloorOffsetValid)
+			CryLogAlways("[WinlatorXR] floor offset from HMD altitude: %.3f m (head %.3f m above floor)", offset, state.hmdAltitude);
+		m_winlatorFloorOffset = offset;
+		m_winlatorFloorOffsetValid = true;
+	}
+
+	// eye separation: WinlatorXR reports the distance between the two OpenXR eye views in metres.
+	// Be lenient about units in case a future protocol version switches to millimetres.
+	float ipd = state.ipd;
+	if (ipd > 1.f)
+		ipd *= 0.001f;
+	if (ipd >= 0.045f && ipd <= 0.085f)
+		m_winlatorEyeSeparation = ipd;
+
+	// symmetric FOV as reported by the headset runtime (degrees); ignore obviously bogus values
+	if (state.fovH >= 40.f && state.fovH <= 150.f && state.fovV >= 40.f && state.fovV <= 150.f)
+	{
+		if (fabsf(state.fovH - m_winlatorFovH) > 1e-3f || fabsf(state.fovV - m_winlatorFovV) > 1e-3f)
+		{
+			m_winlatorFovH = state.fovH;
+			m_winlatorFovV = state.fovV;
+			CryLogAlways("[WinlatorXR] FOV updated: horz %.1f deg  vert %.1f deg", state.fovH, state.fovV);
+		}
+	}
+
+	// WinlatorXR only gives us the centre pose plus the IPD, so the eye offset is a plain horizontal
+	// shift along the head's local x axis (left eye towards -x, right eye towards +x; OpenXR convention)
+	XrQuaternionf orientation = { qx, qy, qz, qw };
+	// local +x axis of the head rotation
+	float rightX = 1.f - 2.f * (qy * qy + qz * qz);
+	float rightY = 2.f * (qx * qy + qw * qz);
+	float rightZ = 2.f * (qx * qz - qw * qy);
+	float floorY = state.hmdY + GetWinlatorFloorOffset();
+	for (int eye = 0; eye < 2; ++eye)
+	{
+		float shift = (eye == 0 ? -0.5f : 0.5f) * m_winlatorEyeSeparation;
+		m_renderViews[eye].type = XR_TYPE_VIEW;
+		m_renderViews[eye].next = nullptr;
+		m_renderViews[eye].pose.orientation = orientation;
+		m_renderViews[eye].pose.position.x = state.hmdX + rightX * shift;
+		m_renderViews[eye].pose.position.y = floorY + rightY * shift;
+		m_renderViews[eye].pose.position.z = state.hmdZ + rightZ * shift;
+		m_renderViews[eye].fov.angleLeft = -DEG2RAD(m_winlatorFovH) / 2.f;
+		m_renderViews[eye].fov.angleRight = DEG2RAD(m_winlatorFovH) / 2.f;
+		m_renderViews[eye].fov.angleUp = DEG2RAD(m_winlatorFovV) / 2.f;
+		m_renderViews[eye].fov.angleDown = -DEG2RAD(m_winlatorFovV) / 2.f;
+	}
+	m_posesValid = true;
+	// remember which of WinlatorXR's pose slots this frame is rendered with (0..252 in steps of 12)
+	m_winlatorFrameSync = clamp_tpl(state.frameId, 0, 255);
+
+	if (!m_winlatorPoseLogged)
+	{
+		m_winlatorPoseLogged = true;
+		CryLogAlways("[WinlatorXR] Received first head pose: pos=(%.3f, %.3f, %.3f) ipd=%.4f m fov=%.1fx%.1f", state.hmdX, state.hmdY, state.hmdZ, m_winlatorEyeSeparation, state.fovH, state.fovV);
 	}
 }

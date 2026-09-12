@@ -7,6 +7,10 @@ public:
 	void Init();
 	void Shutdown();
 
+	// bHaptics vest / ProTubeVR are PC peripherals; under WinlatorXR (standalone headset) their SDKs
+	// are never initialised and every entry point below becomes a no-op.
+	bool AreExternalHapticsReady() const { return m_externalHapticsReady; }
+
 	void RegisterBHapticsEffect(const char* key, const char* file);
 
 	void TriggerBHapticsEffect(const char* key, float intensity = 1.0f, float offsetAngleX = 0, float offsetY = 0);
@@ -18,6 +22,8 @@ public:
 	void TriggerProtubeEffectWeapon(float kickPower, float rumblePower, float rumbleSeconds);
 
 private:
+	bool m_externalHapticsReady = false;
+
 	void InitEffects();
 	void ProtubeKick(float power, bool offHand = false);
 	void ProtubeRumble(float power, float seconds, bool offHand = false);

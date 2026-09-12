@@ -4,6 +4,7 @@
 #include <wrl/client.h>
 
 #include "Hooks.h"
+#include "WinlatorXR.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -83,6 +84,16 @@ extern "C" bool __declspec(dllexport) CryVRInitD3DHooks()
 {
 	if (!hooks::Init())
 		return false;
+
+	if (WinlatorXR::IsLikelyPresent())
+	{
+		// This runs from the launcher before the engine creates its device, i.e. before dxvk creates its
+		// presenter. WinlatorXR launches the game with DXVK_FRAME_RATE=72 (dxvk's frame limiter); under
+		// Wine/Box64 that limiter's sleeps are coarse enough that the game locks to 36 or 18 fps as soon
+		// as a frame takes slightly longer than a refresh, so disable it here. VRRenderer re-applies the
+		// user's vr_winlatorxr_max_fps once the cvars exist.
+		SetEnvironmentVariableA("DXVK_FRAME_RATE", "0");
+	}
 
 	// load system d3d10.dll
 	wchar_t buf[MAX_PATH + 1];

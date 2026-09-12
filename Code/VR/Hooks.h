@@ -1085,7 +1085,7 @@ namespace hooks {
 	{
 		int vtableIndex = getVTableIndex(reinterpret_cast<R (T::*)(Args...)>(func));
 		CryLogAlways("Found vtable index %i for hook %s", vtableIndex, name.c_str());
-		InstallVirtualFunctionHook(name, (void*)instance, vtableIndex, (void*)detour);
+		InstallVirtualFunctionHook(name.c_str(), (void*)instance, vtableIndex, (void*)detour);
 	}
 
 	template <typename T, typename R, typename... Args>
@@ -1093,7 +1093,7 @@ namespace hooks {
 	{
 		int vtableIndex = getVTableIndex(func);
 		CryLogAlways("Found vtable index %i for hook %s", vtableIndex, name.c_str());
-		InstallVirtualFunctionHook(name, (void*)instance, vtableIndex, (void*)detour);
+		InstallVirtualFunctionHook(name.c_str(), (void*)instance, vtableIndex, (void*)detour);
 	}
 
 	template <typename T, typename R, typename... Args>
@@ -1101,7 +1101,7 @@ namespace hooks {
 	{
 		int vtableIndex = getVTableIndex(reinterpret_cast<R (T::*)(Args...)>(func));
 		CryLogAlways("Found vtable index %i for hook %s", vtableIndex, name.c_str());
-		InstallVirtualFunctionHook(name, (void*)instance, vtableIndex, (void*)detour);
+		InstallVirtualFunctionHook(name.c_str(), (void*)instance, vtableIndex, (void*)detour);
 	}
 
 	template <typename T, typename R, typename... Args>
@@ -1109,7 +1109,7 @@ namespace hooks {
 	{
 		int vtableIndex = getVTableIndex(reinterpret_cast<R (T::*)(Args...)>(func));
 		CryLogAlways("Found vtable index %i for hook %s", vtableIndex, name.c_str());
-		InstallVirtualFunctionHook(name, (void*)instance, vtableIndex, (void*)detour);
+		InstallVirtualFunctionHook(name.c_str(), (void*)instance, vtableIndex, (void*)detour);
 	}
 
 	template <typename T, typename R, typename... Args>
@@ -1117,7 +1117,7 @@ namespace hooks {
 	{
 		int vtableIndex = getVTableIndex(func);
 		CryLogAlways("Found vtable index %i for hook %s", vtableIndex, name.c_str());
-		InstallVirtualFunctionHook(name, (void*)instance, vtableIndex, (void*)detour);
+		InstallVirtualFunctionHook(name.c_str(), (void*)instance, vtableIndex, (void*)detour);
 	}
 #endif
 }

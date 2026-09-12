@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=CrysisVR
+Exec=wine D:\\\\Crysis\\\\Bin32\\\\CrysisVR.exe
+Type=Application
+StartupWMClass=CrysisVR.exe
+
+[Extra Data]
+container_id=1
+screenSize=1792x1624
+execArgs=

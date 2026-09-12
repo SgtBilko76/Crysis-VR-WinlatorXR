@@ -48,6 +48,14 @@ show up. You will have to migrate them manually - go to
 If you are the brave sort, you can also opt to download the [latest development build](https://github.com/fholger/crysis_vrmod/releases/tag/latest).
 Be warned that it may be unstable and contain more bugs than the stable releases, so use at your own risk.
 
+## Meta Quest (standalone, WinlatorXR)
+
+The mod can also run standalone on a Meta Quest 3 inside [WinlatorXR](https://github.com/WinlatorXR/WinlatorXR)
+(Wine + Box64 + DXVK on Android) - no PC required at runtime. The same `VRMod.dll` detects WinlatorXR at
+start-up and uses its XrAPI protocol instead of OpenXR. See [`Quest/README_QUEST.md`](Quest/README_QUEST.md)
+for the container setup, controls and known issues; `Quest/make_quest_package.bat` assembles the headset package (`Quest/CrysisVR-Installer-Beta-<version>.zip`)
+from a built tree.
+
 ## Configuration
 
 When you boot up the VR mod, you will notice a number of additional buttons in the lower left of the menu. Click on the

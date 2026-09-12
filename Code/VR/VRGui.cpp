@@ -64,7 +64,11 @@ void VRGui::Render()
 
 	Vec2i windowSize = gVRRenderer->GetWindowSize();
 	Vec2i renderSize = gVR->GetRenderSize();
-	SetScale(g_pGameCVars->vr_gui_scale * windowSize.y / 1080.f * max(renderSize.y / windowSize.y, renderSize.x / windowSize.x));
+	// float division: with integer Vec2i maths this collapsed to 0 (and a zero font size) whenever the
+	// window is larger than the render target, which is the normal case under WinlatorXR
+	float ratio = max(renderSize.y / (float)windowSize.y, renderSize.x / (float)windowSize.x);
+	float scale = g_pGameCVars->vr_gui_scale * windowSize.y / 1080.f * ratio;
+	SetScale(max(scale, 0.25f));
 	ImGui::GetIO().DisplaySize = ImVec2((float)renderSize.x, (float)renderSize.y);
 	ImGui_ImplDX10_NewFrame();
 	ImGui::NewFrame();

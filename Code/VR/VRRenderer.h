@@ -40,7 +40,7 @@ public:
 
 	bool ShouldIgnoreWindowSizeChanges() const { return m_ignoreWindowSizeChanges || SAFE_MENU_FUNC_RET(IsLoadingScreenActive()); }
 
-	bool ShouldRenderShadowMaps() const { return m_currentEye != 1; }
+	bool ShouldRenderShadowMaps() const;
 
 	bool AreBinocularsActive() const { return m_binocularsActive; }
 	void GuiClickedUnfocussed() { m_gui.ClickedNoFocus(); }

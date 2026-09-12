@@ -873,6 +873,12 @@ void SCVars::InitVRCVars(IConsole* pConsole)
 	pConsole->Register("vr_cutscenes_2d", &vr_cutscenes_2d, 0, VF_RESTRICTEDMODE|VF_DUMPTODISK, "If enabled, plays cutscenes on a 2D screen instead of in VR");
 	pConsole->Register("vr_shadow_optimization", &vr_shadow_optimization, 1, VF_RESTRICTEDMODE, "If enabled, only draws shadow maps once for the first eye, hopefully improving performance without any side effects");
 	pConsole->Register("vr_resolution_scale", &vr_resolution_scale, 1, VF_RESTRICTEDMODE|VF_DUMPTODISK, "Allows changing the VR render resolution");
+	pConsole->Register("vr_winlatorxr_render_height", &vr_winlatorxr_render_height, 1200, VF_RESTRICTEDMODE|VF_DUMPTODISK, "Per-eye render height when running under WinlatorXR (Quest/Pico); width follows the headset FOV aspect");
+	pConsole->Register("vr_winlatorxr_aer", &vr_winlatorxr_aer, 1, VF_RESTRICTEDMODE|VF_DUMPTODISK, "Under WinlatorXR, use alternate-eye rendering: one full-resolution eye per frame instead of side-by-side (cheaper per frame, each eye updates at half rate)");
+	pConsole->Register("vr_winlatorxr_max_fps", &vr_winlatorxr_max_fps, 0, VF_RESTRICTEDMODE|VF_DUMPTODISK, "Under WinlatorXR, frame-rate cap applied via dxvk's limiter (0 = uncapped; WinlatorXR's own 72 fps cap quantises the game to 36/18 fps)");
+	pConsole->Register("vr_winlatorxr_block_desktop_input", &vr_winlatorxr_block_desktop_input, 1, VF_RESTRICTEDMODE|VF_DUMPTODISK, "Under WinlatorXR, ignore the mouse/keyboard that WinlatorXR emulates from the controllers while in-game (they would double-trigger actions)");
+	pConsole->Register("vr_winlatorxr_native_menu_pointer", &vr_winlatorxr_native_menu_pointer, 1, VF_RESTRICTEDMODE|VF_DUMPTODISK, "Under WinlatorXR, let WinlatorXR's own controller pointer/click operate the flat menus instead of the mod's synthetic menu input");
+	pConsole->Register("vr_height_offset", &vr_height_offset, 0.0f, VF_RESTRICTEDMODE|VF_DUMPTODISK, "Raises (positive) or lowers (negative) the in-game eye height by this many metres");
 	pConsole->Register("vr_controller_yaw_deadzone", &vr_controller_yaw_deadzone, 0.15f, VF_RESTRICTEDMODE, "Deadzone for stick turning");
 	pConsole->Register("vr_controller_stick_action_threshold", &vr_controller_stick_action_threshold, 0.75f, VF_RESTRICTEDMODE, "How far a stick needs to be extended to trigger an input action");
 	pConsole->Register("vr_controller_stick_zone_cutoff", &vr_controller_stick_zone_cutoff, 0.25f, VF_RESTRICTEDMODE, "If stick is extended this far in one axis, disable any input actions in the other axis");

@@ -113,6 +113,12 @@ void VRRenderer::Init()
 	IDXGISwapChain *swapChain = g_latestCreatedSwapChain;
 	CryLogAlways("Retrieved swap chain: %ul", (uintptr_t)swapChain);
 
+	if (swapChain == nullptr)
+	{
+		CryLogAlways("ERROR: no DXGI swap chain was captured - the D3D creation hooks did not fire. VR rendering is unavailable.");
+		return;
+	}
+
 	if (swapChain != nullptr)
 	{
 		hooks::InstallVirtualFunctionHook("IDXGISwapChain::Present", swapChain, 8, &IDXGISwapChain_Present);
@@ -152,10 +158,18 @@ void VRRenderer::Render(SystemRenderFunc renderFunc, ISystem* pSystem)
 
 	gVR->AwaitFrame();
 
-	RenderSingleEye(0, renderFunc, pSystem);
-	// need to call RenderBegin to reset state, otherwise we get messed up object culling and other issues
-	pSystem->RenderBegin();
-	RenderSingleEye(1, renderFunc, pSystem);
+	if (gXR->UseWinlatorAER() && GetRenderMode() == RM_VR)
+	{
+		// alternate-eye rendering: only the eye this frame carries (see VRManager::ComposeWinlatorXRFrame)
+		RenderSingleEye(gXR->CurrentAerEye(), renderFunc, pSystem);
+	}
+	else
+	{
+		RenderSingleEye(0, renderFunc, pSystem);
+		// need to call RenderBegin to reset state, otherwise we get messed up object culling and other issues
+		pSystem->RenderBegin();
+		RenderSingleEye(1, renderFunc, pSystem);
+	}
 
 	Vec2i renderSize = gVR->GetRenderSize();
 	gEnv->pRenderer->SetScissor(0, 0, renderSize.x, renderSize.y);
@@ -222,15 +236,51 @@ void VRRenderer::SetDesiredWindowSize(int width, int height)
 	//ImGui::GetIO().FontGlobalScale = float(renderSize.y) / height;
 	m_windowWidth = width;
 	m_windowHeight = height;
+
+	if (gXR->IsUsingWinlatorXR())
+	{
+		// the game window always covers the whole X screen under WinlatorXR (see EnsureWinlatorXRWindow)
+		int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+		int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+		if (screenWidth > 0 && screenHeight > 0)
+		{
+			m_windowWidth = screenWidth;
+			m_windowHeight = screenHeight;
+		}
+	}
 }
 
 Vec2i VRRenderer::GetWindowSize() const
 {
+	if (gXR->IsUsingWinlatorXR())
+	{
+		int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+		int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+		if (screenWidth > 0 && screenHeight > 0)
+			return Vec2i(screenWidth, screenHeight);
+	}
 	return Vec2i(m_windowWidth, m_windowHeight);
+}
+
+bool VRRenderer::ShouldRenderShadowMaps() const
+{
+	// with alternate-eye rendering every frame is a fresh frame, so the "second eye" shortcut must not apply
+	return m_currentEye != 1 || gXR->UseWinlatorAER();
 }
 
 void VRRenderer::ChangeRenderResolution(int width, int height)
 {
+	if (gXR->IsUsingWinlatorXR())
+	{
+		// dxvk re-reads DXVK_FRAME_RATE whenever it recreates its presenter, which the resolution change
+		// below causes - so this is early enough for the user's cap (0 = uncapped; the value WinlatorXR
+		// launches with, 72, quantises the game to 36/18 fps under Box64)
+		char maxFps[16];
+		sprintf(maxFps, "%d", max(g_pGameCVars->vr_winlatorxr_max_fps, 0));
+		SetEnvironmentVariableA("DXVK_FRAME_RATE", maxFps);
+		CryLogAlways("[WinlatorXR] render resolution %dx%d, DXVK_FRAME_RATE=%s", width, height, maxFps);
+	}
+
 	m_ignoreWindowSizeChanges = true;
 	gEnv->pRenderer->ChangeResolution(width, height, 8, 0, false);
 	gEnv->pRenderer->EnableVSync(false);
@@ -293,7 +343,10 @@ void VRRenderer::RenderSingleEye(int eye, SystemRenderFunc renderFunc, ISystem* 
 
 	ICVar* particlesDebug = gEnv->pConsole->GetCVar("e_particles_debug");
 	int origParticlesDebug = particlesDebug ? particlesDebug->GetIVal() : 0;
-	if (particlesDebug && eye == 1)
+	// under alternate-eye rendering each frame renders a single eye, so the second-eye shortcuts
+	// (frozen particle update, no shadow map refresh) would halve the particle simulation rate
+	bool secondEyePass = eye == 1 && !gXR->UseWinlatorAER();
+	if (particlesDebug && secondEyePass)
 	{
 		// this disables updating of the particles system, to avoid doing extra work for the second eye
 		particlesDebug->SetFlags(particlesDebug->GetFlags() & (~VF_CHEAT));
@@ -333,7 +386,7 @@ void VRRenderer::RenderSingleEye(int eye, SystemRenderFunc renderFunc, ISystem* 
 
 	gVR->CaptureEye(eye);
 
-	if (particlesDebug && eye == 1)
+	if (particlesDebug && secondEyePass)
 	{
 		particlesDebug->Set(origParticlesDebug);
 	}

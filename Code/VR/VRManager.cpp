@@ -14,6 +14,8 @@
 #include "VRRenderUtils.h"
 #include "Weapon.h"
 #include "Menus/FlashMenuObject.h"
+#include "WinlatorXR.h"
+#include <imgui.h>
 
 VRManager s_VRManager;
 VRManager* gVR = &s_VRManager;
@@ -66,6 +68,7 @@ VRManager::~VRManager()
 		m_eyeTextures[eye].Detach();
 		m_eyeTextures11[eye].Detach();
 	}
+	m_hudView.Detach();
 	m_hudTexture.Detach();
 	m_hudTexture11.Detach();
 	m_swapchain.Detach();
@@ -98,6 +101,7 @@ void VRManager::Shutdown()
 		m_eyeTextures[eye].Reset();
 		m_eyeTextures11[eye].Reset();
 	}
+	m_hudView.Reset();
 	m_hudTexture.Reset();
 	m_hudTexture11.Reset();
 	m_swapchain.Reset();
@@ -187,6 +191,14 @@ void VRManager::CaptureHUD()
 	// acquire and copy the current swap chain buffer to the HUD texture
 	CopyBackbufferToTexture(m_hudTexture.Get());
 
+	if (gXR->IsUsingWinlatorXR())
+	{
+		// the back buffer *is* the headset image under WinlatorXR, so instead of a desktop mirror we
+		// compose the actual stereo frame here
+		ComposeWinlatorXRFrame();
+		return;
+	}
+
 	// mirror the current eye texture to the backbuffer
 	int mirrorEye = g_pGameCVars->vr_mirror_eye == 1 ? 1 : 0;
 	RectF bounds = GetEffectiveRenderLimits(mirrorEye);
@@ -211,6 +223,20 @@ void VRManager::SetSwapChain(IDXGISwapChain *swapchain)
 
 void VRManager::FinishFrame(bool didRenderThisFrame)
 {
+	if (gXR->IsUsingWinlatorXR())
+	{
+		// the frame was composed into the back buffer by ComposeWinlatorXRFrame (pre-present); all that
+		// is left is telling WinlatorXR how to display it
+		if (!m_initialized)
+			return;
+		if (!didRenderThisFrame)
+			gXR->AwaitFrame();
+		gXR->FinishFrame();
+		if (didRenderThisFrame)
+			UpdateSmoothedPlayerHeight();
+		return;
+	}
+
 	if (!m_initialized || !m_device || !m_device11 || !m_hudTexture11)
 		return;
 
@@ -648,6 +674,7 @@ Matrix34 VRManager::GetBaseVRTransform(bool smooth) const
 		}
 
 		angles.z = m_updatedViewYaw;
+		position.z += g_pGameCVars->vr_height_offset;
 
 		Matrix34 viewMat;
 		viewMat.SetRotationXYZ(angles, position);
@@ -684,6 +711,8 @@ Matrix34 VRManager::GetBaseVRTransform(bool smooth) const
 	{
 		pos.z -= (m_hmdReferenceHeight - curStance->viewOffset.z);
 	}
+
+	pos.z += g_pGameCVars->vr_height_offset;
 
 	Matrix34 baseMat = Matrix34::CreateRotationXYZ(ang, pos);
 	return baseMat;
@@ -727,6 +756,12 @@ EStance VRManager::GetPhysicalStance() const
 
 void VRManager::Update()
 {
+	if (gXR->IsUsingWinlatorXR())
+	{
+		EnsureWinlatorXRWindow();
+		UpdateDesktopInputBlock();
+	}
+
 	UpdateOffHandRayQuery();
 
 	gXR->SetHudVisibility(true);
@@ -1237,6 +1272,16 @@ void VRManager::InitDevice(IDXGISwapChain* swapchain)
 		CryLogAlways("Game is rendering to device %ls", desc.Description);
 	}
 
+	if (gXR->IsUsingWinlatorXR())
+	{
+		// no D3D11 interop / OpenXR session: the stereo frame is composed straight into this device's
+		// back buffer (see ComposeWinlatorXRFrame)
+		gVRRenderUtils->Shutdown();
+		gVRRenderUtils->Init(m_device.Get());
+		EnsureWinlatorXRWindow();
+		return;
+	}
+
 	CryLogAlways("Creating D3D11 device");
 	LUID requiredAdapterLuid;
 	D3D_FEATURE_LEVEL requiredLevel;
@@ -1293,11 +1338,22 @@ void VRManager::CreateHUDTexture()
 	Vec2i size = GetRenderSize();
 	CryLogAlways("Creating HUD texture: %i x %i", size.x, size.y);
 	CreateSharedTexture(m_hudTexture, m_hudTexture11, size.x, size.y);
+	m_hudView.Reset();
+	if (m_hudTexture)
+	{
+		D3D10_SHADER_RESOURCE_VIEW_DESC srvDesc;
+		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		srvDesc.ViewDimension = D3D10_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+		srvDesc.Texture2D.MostDetailedMip = 0;
+		CHECK_D3D10(m_device->CreateShaderResourceView(m_hudTexture.Get(), &srvDesc, m_hudView.ReleaseAndGetAddressOf()));
+	}
 }
 
 void VRManager::CreateSharedTexture(ComPtr<ID3D10Texture2D> &texture, ComPtr<ID3D11Texture2D> &texture11, int width, int height)
 {
-	if (!m_device || !m_device11)
+	bool shared = !gXR->IsUsingWinlatorXR();
+	if (!m_device || (shared && !m_device11))
 		return;
 
 	D3D10_TEXTURE2D_DESC desc = {};
@@ -1309,11 +1365,17 @@ void VRManager::CreateSharedTexture(ComPtr<ID3D10Texture2D> &texture, ComPtr<ID3
 	desc.MipLevels = 1;
 	desc.Usage = D3D10_USAGE_DEFAULT;
 	desc.BindFlags = D3D10_BIND_SHADER_RESOURCE;
-	desc.MiscFlags = D3D10_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+	// under WinlatorXR the texture only ever lives on the game's D3D10 device (no D3D11 interop)
+	desc.MiscFlags = shared ? D3D10_RESOURCE_MISC_SHARED_KEYEDMUTEX : 0;
 	HRESULT hr = m_device->CreateTexture2D(&desc, nullptr, texture.ReleaseAndGetAddressOf());
 	if (hr != S_OK)
 	{
 		CryLogAlways("D3D10 CreateTexture2D failed: %i", hr);
+		return;
+	}
+	if (!shared)
+	{
+		texture11.Reset();
 		return;
 	}
 
@@ -1359,6 +1421,7 @@ void VRManager::AcquireTextureSync(ID3D10Texture2D* target, int key)
 	if (target == nullptr) return;
 	ComPtr<IDXGIKeyedMutex> mutex;
 	target->QueryInterface(__uuidof(IDXGIKeyedMutex), (void**)mutex.GetAddressOf());
+	if (!mutex) return;
 	HRESULT hr = mutex->AcquireSync(key, 100);
 	if (FAILED(hr))
 	{
@@ -1377,6 +1440,7 @@ void VRManager::AcquireTextureSync(ID3D11Texture2D* target, int key)
 	if (target == nullptr) return;
 	ComPtr<IDXGIKeyedMutex> mutex;
 	target->QueryInterface(__uuidof(IDXGIKeyedMutex), (void**)mutex.GetAddressOf());
+	if (!mutex) return;
 	HRESULT hr = mutex->AcquireSync(key, 100);
 	if (FAILED(hr))
 	{
@@ -1395,6 +1459,7 @@ void VRManager::ReleaseTextureSync(ID3D10Texture2D* target, int key)
 	if (target == nullptr) return;
 	ComPtr<IDXGIKeyedMutex> mutex;
 	target->QueryInterface(__uuidof(IDXGIKeyedMutex), (void**)mutex.GetAddressOf());
+	if (!mutex) return;
 	CHECK_D3D10(mutex->ReleaseSync(key));
 }
 
@@ -1403,6 +1468,7 @@ void VRManager::ReleaseTextureSync(ID3D11Texture2D* target, int key)
 	if (target == nullptr) return;
 	ComPtr<IDXGIKeyedMutex> mutex;
 	target->QueryInterface(__uuidof(IDXGIKeyedMutex), (void**)mutex.GetAddressOf());
+	if (!mutex) return;
 	CHECK_D3D10(mutex->ReleaseSync(key));
 }
 
@@ -1428,5 +1494,234 @@ void VRManager::UpdateOffHandRayQuery()
 	else
 	{
 		m_pointAtEntityId = 0;
+	}
+}
+
+// ---------------------------------------------------------------------------------------------------
+// WinlatorXR backend
+// ---------------------------------------------------------------------------------------------------
+
+void VRManager::ComposeWinlatorXRFrame()
+{
+	if (!m_device || !m_swapchain)
+		return;
+
+	ComPtr<ID3D10Texture2D> backbuffer;
+	m_swapchain->GetBuffer(0, __uuidof(ID3D10Texture2D), (void**)backbuffer.GetAddressOf());
+	if (!backbuffer)
+		return;
+	D3D10_TEXTURE2D_DESC bbDesc;
+	backbuffer->GetDesc(&bbDesc);
+	int width = (int)bbDesc.Width;
+	int height = (int)bbDesc.Height;
+	if (width <= 0 || height <= 0)
+		return;
+
+	ComPtr<ID3D10RenderTargetView> rtv;
+	if (FAILED(m_device->CreateRenderTargetView(backbuffer.Get(), nullptr, rtv.ReleaseAndGetAddressOf())) || !rtv)
+		return;
+
+	// Decide what this frame is. The back buffer currently holds whatever the engine rendered last: in
+	// VR mode that is the HUD over a transparent clear (the eyes live in m_eyeTextures), in the 2D modes
+	// (binoculars, scopes, 2D cinema, menus, loading screens) it is the flat game image plus HUD.
+	CFlashMenuObject* menu = g_pGame ? g_pGame->GetMenu() : nullptr;
+	bool inMenu = menu && (menu->IsMenuActive() || menu->IsLoadingScreenActive());
+	VRRenderMode renderMode = gVRRenderer->GetRenderMode();
+	bool haveEyes = m_eyeViews[0].Get() != nullptr && m_eyeViews[1].Get() != nullptr;
+	bool aer = gXR->UseWinlatorAER();
+	int aerEye = gXR->CurrentAerEye();
+	bool vrWorld = !inMenu && renderMode == RM_VR && gXR->ArePosesValid() && (aer ? m_eyeViews[aerEye].Get() != nullptr : haveEyes);
+	bool stereoPlane = !inMenu && renderMode == RM_3D && haveEyes;
+
+	D3D10StateGuard stateGuard(m_device.Get());
+	ID3D10RenderTargetView* rtvs[1] = { rtv.Get() };
+	m_device->OMSetRenderTargets(1, rtvs, nullptr);
+
+	VRRect full(0, 0, width, height);
+	int syncId = gXR->GetWinlatorFrameSyncId();
+
+	if (vrWorld && aer)
+	{
+		// Alternate-eye: the whole frame is the eye rendered this frame, at full resolution. The
+		// frame-sync marker's blue channel tells WinlatorXR which of its two eye framebuffers to
+		// update (B > 0 = right), R selects the pose the frame was rendered with.
+		gVRRenderUtils->DrawTextureRect(m_eyeViews[aerEye].Get(), full, nullptr, VRRenderUtils::RB_OPAQUE);
+		DrawWinlatorHud(aerEye, full);
+		gVRRenderUtils->FillRect(VRRect(0, 0, 8, 8), ColorF(syncId / 255.f, 0.f, aerEye == 1 ? 1.f : 0.f, 1.f), false);
+		gXR->SetWinlatorFrameMode(1, 2);
+	}
+	else if (vrWorld || stereoPlane)
+	{
+		// Side-by-side: left eye in the left half, right eye in the right half. WinlatorXR stretches
+		// each half over the FOV we render with, so squeezing the eye images into the halves is
+		// exactly undone on the headset. (The 3D cinema plane uses the same layout on the virtual screen.)
+		int halfWidth = width / 2;
+		for (int eye = 0; eye < 2; ++eye)
+		{
+			VRRect region(eye * halfWidth, 0, halfWidth, height);
+			gVRRenderUtils->DrawTextureRect(m_eyeViews[eye].Get(), region, nullptr, VRRenderUtils::RB_OPAQUE);
+			DrawWinlatorHud(eye, region);
+		}
+		if (vrWorld)
+		{
+			// Frame-sync marker: WinlatorXR samples screen pixel (0,0) and, if G == 0 and A > 0, uses R as
+			// the index of the head pose our frame was rendered with. A small block (rather than a single
+			// pixel) survives the scaling from back buffer to X screen.
+			gVRRenderUtils->FillRect(VRRect(0, 0, 8, 8), ColorF(syncId / 255.f, 0.f, 0.f, 1.f), false);
+			gXR->SetWinlatorFrameMode(1, 1);
+		}
+		else
+		{
+			gXR->SetWinlatorFrameMode(2, 1);
+		}
+	}
+	else
+	{
+		// flat frame (menu, loading screen, binoculars, weapon scope, 2D cinema): let WinlatorXR show
+		// the back buffer as-is on its virtual screen
+		gXR->SetWinlatorFrameMode(2, 0);
+	}
+
+	// WinlatorXR composites our frame with source alpha, and the engine leaves the back buffer alpha at
+	// whatever its transparent HUD clear produced - force it to fully opaque
+	gVRRenderUtils->FillRect(full, ColorF(0.f, 0.f, 0.f, 1.f), true);
+}
+
+void VRManager::DrawWinlatorHud(int eye, const VRRect& region)
+{
+	if (!m_hudView || !gXR->IsHudVisible())
+		return;
+
+	// The HUD quad pose/size are maintained in gXR exactly like for the OpenXR quad layer (see
+	// SetHudAttachedToHead etc.). Project the quad centre into head space and draw it as a
+	// fronto-parallel rectangle at that distance - exact for the head-locked HUD, a good approximation
+	// for the vehicle HUD.
+	XrPosef hudPose = gXR->GetHudPose();
+	Matrix34 hud = OpenXRToCrysis(hudPose.orientation, hudPose.position);
+	Matrix34 head = Matrix34(gXR->GetHmdTransform());
+	Matrix34 headInv = head.GetInvertedFast();
+	Vec3 c = headInv.TransformPoint(hud.GetTranslation());
+	float dist = c.y;
+	if (dist < 0.05f)
+		return;
+
+	float tanl, tanr, tant, tanb;
+	gXR->GetFov(eye, tanl, tanr, tant, tanb);
+	float tanH = max(fabsf(tanl), fabsf(tanr));
+	float tanV = max(fabsf(tant), fabsf(tanb));
+	if (tanH <= 0.f || tanV <= 0.f)
+		return;
+
+	// everything below is in tangent space: the eye image spans [-tanH, +tanH] horizontally and
+	// [+tanV, -tanV] vertically
+	float halfW = 0.5f * gXR->GetHudWidth() / dist;
+	float halfH = 0.5f * gXR->GetHudHeight() / dist;
+	// stereo convergence: an object straight ahead is seen shifted towards the nose in each eye, i.e.
+	// to the right in the left eye's image and to the left in the right eye's image
+	float shift = (eye == 0 ? 1.f : -1.f) * 0.5f * gXR->GetWinlatorEyeSeparation() / dist;
+	float cx = c.x / dist + shift;
+	float cz = c.z / dist;
+
+	float x0 = region.x + region.w * (0.5f + (cx - halfW) / (2.f * tanH));
+	float x1 = region.x + region.w * (0.5f + (cx + halfW) / (2.f * tanH));
+	float y0 = region.y + region.h * (0.5f - (cz + halfH) / (2.f * tanV));
+	float y1 = region.y + region.h * (0.5f - (cz - halfH) / (2.f * tanV));
+
+	VRRect dest((int)floorf(x0 + 0.5f), (int)floorf(y0 + 0.5f), (int)floorf(x1 - x0 + 0.5f), (int)floorf(y1 - y0 + 0.5f));
+	// never bleed outside this eye's region (matters for side-by-side)
+	gVRRenderUtils->DrawTextureRect(m_hudView.Get(), dest, &region, VRRenderUtils::RB_ALPHA);
+}
+
+void VRManager::EnsureWinlatorXRWindow()
+{
+	HWND hWnd = (HWND)m_winlatorWindow;
+	if (!hWnd)
+	{
+		hWnd = gEnv->pRenderer ? (HWND)gEnv->pRenderer->GetHWND() : nullptr;
+		if (!hWnd && m_swapchain)
+		{
+			DXGI_SWAP_CHAIN_DESC desc;
+			if (SUCCEEDED(m_swapchain->GetDesc(&desc)))
+				hWnd = desc.OutputWindow;
+		}
+		if (!hWnd)
+		{
+			if (m_winlatorWindowRetries++ == 0)
+				CryLogAlways("[WinlatorXR] game window not known yet - will keep looking");
+			return;
+		}
+		m_winlatorWindow = hWnd;
+		CryLogAlways("[WinlatorXR] game window 0x%p", (void*)hWnd);
+	}
+
+	int width = GetSystemMetrics(SM_CXSCREEN);
+	int height = GetSystemMetrics(SM_CYSCREEN);
+	if (width <= 0 || height <= 0)
+		return;
+
+	// borderless popup: strip the title bar / frame / system menu so nothing offsets the client area
+	LONG_PTR style = GetWindowLongPtrA(hWnd, GWL_STYLE);
+	LONG_PTR wantedStyle = (style & ~(WS_CAPTION | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) | WS_POPUP | WS_VISIBLE;
+	bool styleChanged = wantedStyle != style;
+	if (styleChanged)
+		SetWindowLongPtrA(hWnd, GWL_STYLE, wantedStyle);
+
+	LONG_PTR exStyle = GetWindowLongPtrA(hWnd, GWL_EXSTYLE);
+	LONG_PTR wantedEx = exStyle & ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME | WS_EX_STATICEDGE);
+	if (wantedEx != exStyle)
+	{
+		SetWindowLongPtrA(hWnd, GWL_EXSTYLE, wantedEx);
+		styleChanged = true;
+	}
+
+	RECT r;
+	bool geometryWrong = !GetWindowRect(hWnd, &r) || r.left != 0 || r.top != 0
+		|| (r.right - r.left) != width || (r.bottom - r.top) != height;
+	if (styleChanged || geometryWrong)
+	{
+		// bypass the mod's SetWindowPos hook (it may be in "ignore window size changes" mode)
+		SetWindowPos(hWnd, HWND_TOP, 0, 0, width, height, SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOACTIVATE);
+		CryLogAlways("[WinlatorXR] forced game window borderless at (0,0) %dx%d (was %ld,%ld %ldx%ld style=0x%llx)",
+			width, height, (long)r.left, (long)r.top, (long)(r.right - r.left), (long)(r.bottom - r.top), (unsigned long long)style);
+	}
+}
+
+void VRManager::UpdateDesktopInputBlock()
+{
+	if (!gEnv->pInput)
+		return;
+
+	CFlashMenuObject* menu = g_pGame ? g_pGame->GetMenu() : nullptr;
+	bool inMenu = (menu && (menu->IsMenuActive() || menu->IsLoadingScreenActive())) || gEnv->pConsole->IsOpened();
+	float now = gEnv->pTimer->GetAsyncCurTime();
+	if (inMenu)
+	{
+		if (m_menuEnterTime < 0.f)
+			m_menuEnterTime = now;
+	}
+	else
+	{
+		m_menuEnterTime = -1.f;
+	}
+
+	bool blockAll = g_pGameCVars->vr_winlatorxr_block_desktop_input != 0 && !inMenu;
+	// Briefly keep the keyboard blocked after entering a menu: the Esc that WinlatorXR emulates from the
+	// same menu-button press we used to open the menu would otherwise close it again.
+	bool menuGrace = inMenu && m_menuEnterTime >= 0.f && (now - m_menuEnterTime) < 0.5f;
+	bool blockKeyboard = blockAll || menuGrace;
+	// while the ImGui settings overlay owns the pointer, keep WinlatorXR's emulated click away from the
+	// Flash menu underneath (ImGui gets the click straight from the Win32 button state)
+	bool imguiWantsMouse = ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse;
+	bool blockMouse = blockAll || (inMenu && imguiWantsMouse);
+
+	if (blockKeyboard != m_keyboardBlocked)
+	{
+		gEnv->pInput->EnableDevice(eDI_Keyboard, !blockKeyboard);
+		m_keyboardBlocked = blockKeyboard;
+	}
+	if (blockMouse != m_mouseBlocked)
+	{
+		gEnv->pInput->EnableDevice(eDI_Mouse, !blockMouse);
+		m_mouseBlocked = blockMouse;
 	}
 }

@@ -17,6 +17,8 @@
 
 using Microsoft::WRL::ComPtr;
 
+struct VRRect;
+
 class VRManager
 {
 public:
@@ -106,6 +108,7 @@ private:
 	ComPtr<ID3D10Texture2D> m_eyeTextures[2];
 	ComPtr<ID3D10ShaderResourceView> m_eyeViews[2];
 	ComPtr<ID3D10Texture2D> m_hudTexture;
+	ComPtr<ID3D10ShaderResourceView> m_hudView;
 
 	// D3D11 resources for OpenXR submission
 	ComPtr<ID3D11Device> m_device11;
@@ -129,6 +132,29 @@ private:
 	void AcquireTextureSync(ID3D11Texture2D* target, int key);
 	void ReleaseTextureSync(ID3D10Texture2D* target, int key);
 	void ReleaseTextureSync(ID3D11Texture2D* target, int key);
+
+	// --- WinlatorXR backend (see VR/WinlatorXR.h) ---
+	// WinlatorXR has no compositor API: it just displays the game window. So instead of submitting eye
+	// textures to a runtime we compose the final side-by-side / alternate-eye (or flat) frame into the
+	// back buffer ourselves, right before Present.
+	void ComposeWinlatorXRFrame();
+	// draws the captured HUD texture for 'eye' into the frame region, positioned like the OpenXR quad
+	// layer would be (fronto-parallel approximation of the HUD pose maintained in gXR)
+	void DrawWinlatorHud(int eye, const VRRect& region);
+	// Force the game window borderless and pinned to the X-screen top-left (0,0) at full size. WinlatorXR
+	// reads the frame-sync pixel at screen (0,0) and stops rendering the stereo view if it can't find it;
+	// a title bar or an offset window would shift our composited frame. Re-asserted each frame, only
+	// acts on drift.
+	void EnsureWinlatorXRWindow();
+	// WinlatorXR unconditionally emulates a mouse/keyboard from the controllers (trigger = left click,
+	// menu button = Esc, ...). In-game those would double up with our own packet-driven input, so the
+	// mouse/keyboard input devices are disabled while playing and re-enabled for the flat menus.
+	void UpdateDesktopInputBlock();
+	bool m_keyboardBlocked = false;
+	bool m_mouseBlocked = false;
+	float m_menuEnterTime = -1.f;
+	void* m_winlatorWindow = nullptr;
+	int m_winlatorWindowRetries = 0;
 
 	Ang3 m_smoothedWeaponAngles;
 

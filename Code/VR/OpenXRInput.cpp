@@ -111,6 +111,12 @@ void OpenXRInput::Init(XrInstance instance, XrSession session, XrSpace space)
 
 void OpenXRInput::Shutdown()
 {
+	if (m_usingWinlatorXR)
+	{
+		m_usingWinlatorXR = false;
+		return;
+	}
+
 	DestroyAction(m_jumpCrouch);
 	DestroyAction(m_moveX);
 	DestroyAction(m_moveY);
@@ -159,22 +165,34 @@ void OpenXRInput::Shutdown()
 
 void OpenXRInput::Update()
 {
-	if (!m_session)
-		return;
+	if (m_usingWinlatorXR)
+	{
+		UpdateWinlatorXRActions();
+	}
+	else
+	{
+		if (!m_session)
+			return;
 
-	std::vector<XrActiveActionSet> activeSets;
-	activeSets.push_back({ m_ingameSet, XR_NULL_PATH });
-	activeSets.push_back({ m_menuSet, XR_NULL_PATH });
-	activeSets.push_back({ m_vehicleSet, XR_NULL_PATH });
-	XrActionsSyncInfo syncInfo{ XR_TYPE_ACTIONS_SYNC_INFO };
-	syncInfo.countActiveActionSets = activeSets.size();
-	syncInfo.activeActionSets = activeSets.data();
-	XR_CheckResult(xrSyncActions(m_session, &syncInfo), "syncing actions");
+		std::vector<XrActiveActionSet> activeSets;
+		activeSets.push_back({ m_ingameSet, XR_NULL_PATH });
+		activeSets.push_back({ m_menuSet, XR_NULL_PATH });
+		activeSets.push_back({ m_vehicleSet, XR_NULL_PATH });
+		XrActionsSyncInfo syncInfo{ XR_TYPE_ACTIONS_SYNC_INFO };
+		syncInfo.countActiveActionSets = activeSets.size();
+		syncInfo.activeActionSets = activeSets.data();
+		XR_CheckResult(xrSyncActions(m_session, &syncInfo), "syncing actions");
+	}
 
 	UpdateControllerPoses();
 
+	// Under WinlatorXR the menus are flat screens operated by WinlatorXR's own controller pointer, which
+	// moves the (Win32) hardware mouse for us; only the in-game HUD (composed by us in VR mode) needs the
+	// controller ray intersection to drive the cursor.
+	bool nativePointer = m_usingWinlatorXR && g_pGameCVars->vr_winlatorxr_native_menu_pointer != 0 && g_pGame->GetMenu() && g_pGame->GetMenu()->IsMenuActive();
+
 	float pointerX, pointerY;
-	if (CalcControllerHudIntersection(g_pGameCVars->vr_weapon_hand, pointerX, pointerY))
+	if (!nativePointer && CalcControllerHudIntersection(g_pGameCVars->vr_weapon_hand, pointerX, pointerY))
 	{
 		m_hudMousePosSamples[m_curMouseSampleIdx].x = pointerX;
 		m_hudMousePosSamples[m_curMouseSampleIdx].y = pointerY;
@@ -242,6 +260,12 @@ Vec3 OpenXRInput::GetControllerVelocity(int hand)
 {
 	hand = clamp_tpl(hand, 0, 1);
 
+	if (m_usingWinlatorXR)
+	{
+		// the packet carries no velocity; UpdateWinlatorXRActions finite-differences the aim position
+		return m_wxrVelocity[hand];
+	}
+
 	XrSpaceLocation location{ XR_TYPE_SPACE_LOCATION };
 	XrSpaceVelocity velocity { XR_TYPE_SPACE_VELOCITY };
 	location.next = &velocity;
@@ -273,6 +297,21 @@ void OpenXRInput::SendHapticEvent(EVRHand hand, float duration, float amplitude,
 
 	int side = gVR->GetHandSide(hand);
 
+	if (m_usingWinlatorXR)
+	{
+		// WinlatorXR pulses the controller as long as it keeps receiving a level > 0 (forwarded once per
+		// frame by OpenXRRuntime::FinishFrame), so keep the strongest pending pulse alive for its duration
+		float amp = clamp(amplitude * g_pGameCVars->vr_haptics_strength, 0.f, 1.f);
+		float now = gEnv->pTimer->GetAsyncCurTime();
+		float end = now + max(duration, 0.03f);
+		if (amp >= m_wxrHapticAmplitude[side] || now >= m_wxrHapticEndTime[side])
+		{
+			m_wxrHapticAmplitude[side] = amp;
+			m_wxrHapticEndTime[side] = end;
+		}
+		return;
+	}
+
 	XrHapticActionInfo hapticInfo{ XR_TYPE_HAPTIC_ACTION_INFO };
 	hapticInfo.action = m_haptics[side];
 	hapticInfo.subactionPath = XR_NULL_PATH;
@@ -293,6 +332,13 @@ void OpenXRInput::SendHapticEvent(float duration, float amplitude, float frequen
 void OpenXRInput::StopHaptics(EVRHand hand)
 {
 	int side = gVR->GetHandSide(hand);
+
+	if (m_usingWinlatorXR)
+	{
+		m_wxrHapticAmplitude[side] = 0.f;
+		m_wxrHapticEndTime[side] = 0.f;
+		return;
+	}
 
 	XrHapticActionInfo hapticInfo{ XR_TYPE_HAPTIC_ACTION_INFO };
 	hapticInfo.action = m_haptics[side];
@@ -634,7 +680,7 @@ void OpenXRInput::UpdateMenuActions()
 	XrActionStateGetInfo getInfo{ XR_TYPE_ACTION_STATE_GET_INFO };
 	getInfo.subactionPath = XR_NULL_PATH;
 	getInfo.action = m_rotatePitch;
-	xrGetActionStateFloat(m_session, &getInfo, &state);
+	GetFloatState(getInfo.action, state);
 	float pitch = state.isActive ? state.currentState : 0;
 	ImGui::GetIO().AddMouseWheelEvent(0, pitch * .25f);
 }
@@ -675,29 +721,29 @@ void OpenXRInput::UpdatePlayerMovement()
 	getInfo.subactionPath = XR_NULL_PATH;
 
 	getInfo.action = m_moveX;
-	xrGetActionStateFloat(m_session, &getInfo, &state);
+	GetFloatState(getInfo.action, state);
 	if (state.isActive)
 	{
 		input->OnAction(inVehicle ? g_pGameActions->xi_v_movex : g_pGameActions->xi_movex, eAAM_Always, state.currentState);
 	}
 
 	getInfo.action = m_moveY;
-	xrGetActionStateFloat(m_session, &getInfo, &state);
+	GetFloatState(getInfo.action, state);
 	if (state.isActive)
 	{
 		input->OnAction(inVehicle ? g_pGameActions->xi_v_movey : g_pGameActions->xi_movey, eAAM_Always, state.currentState);
 	}
 
 	getInfo.action = m_jumpCrouch;
-	xrGetActionStateFloat(m_session, &getInfo, &state);
+	GetFloatState(getInfo.action, state);
 	float jumpCrouch = state.isActive ? state.currentState : 0;
 
 	getInfo.action = m_rotateYaw;
-	xrGetActionStateFloat(m_session, &getInfo, &state);
+	GetFloatState(getInfo.action, state);
 	float yaw = state.isActive ? state.currentState : 0;
 
 	getInfo.action = m_rotatePitch;
-	xrGetActionStateFloat(m_session, &getInfo, &state);
+	GetFloatState(getInfo.action, state);
 	float pitch = state.isActive ? state.currentState : 0;
 
 	if (inVehicle)
@@ -816,11 +862,11 @@ void OpenXRInput::UpdateGripAmount()
 	for (int side = 0; side < 2; ++side)
 	{
 		getInfo.action = m_grip[side];
-		xrGetActionStateFloat(m_session, &getInfo, &state);
+		GetFloatState(getInfo.action, state);
 		m_gripAmount[side] = state.isActive ? state.currentState : 0;
 
 		getInfo.action = m_trigger[side];
-		xrGetActionStateFloat(m_session, &getInfo, &state);
+		GetFloatState(getInfo.action, state);
 		m_triggerAmount[side] = state.isActive ? state.currentState : 0;
 	}
 
@@ -886,7 +932,7 @@ void OpenXRInput::UpdateBooleanAction(BooleanAction& action)
 	XrActionStateGetInfo getInfo{ XR_TYPE_ACTION_STATE_GET_INFO };
 	getInfo.subactionPath = XR_NULL_PATH;
 	getInfo.action = action.handle;
-	XR_CheckResult(xrGetActionStateBoolean(m_session, &getInfo, &state), "getting boolean action state", m_instance);
+	GetBoolState(getInfo.action, state);
 
 	if (!state.isActive || !action.onPress)
 		return;
@@ -949,7 +995,26 @@ void OpenXRInput::UpdateBooleanActionForMenu(BooleanAction& action, EDeviceId de
 	XrActionStateGetInfo getInfo{ XR_TYPE_ACTION_STATE_GET_INFO };
 	getInfo.subactionPath = XR_NULL_PATH;
 	getInfo.action = action.handle;
-	XR_CheckResult(xrGetActionStateBoolean(m_session, &getInfo, &state), "getting boolean action state", m_instance);
+	if (m_usingWinlatorXR && g_pGameCVars->vr_winlatorxr_native_menu_pointer != 0)
+	{
+		// WinlatorXR emulates a mouse (trigger = left click) and Esc (menu button) from the controllers,
+		// and those reach the Flash menu natively. Only the ImGui overlay needs feeding: mirror the real
+		// mouse button into it (its position comes from the hardware mouse in Update()).
+		if (key == eKI_XI_A)
+		{
+			bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+			if (down != m_wxrMouseDown)
+			{
+				m_wxrMouseDown = down;
+				ImGui::GetIO().AddMouseButtonEvent(0, down);
+				if (down && !ImGui::GetIO().WantCaptureMouse)
+					gVRRenderer->GuiClickedUnfocussed();
+			}
+		}
+		return;
+	}
+
+	GetBoolState(getInfo.action, state);
 
 	if (!state.isActive || !state.changedSinceLastSync)
 		return;
@@ -974,12 +1039,21 @@ void OpenXRInput::UpdateControllerPoses()
 {
 	for (int i = 0; i < 2; ++i)
 	{
-		XrSpaceLocation location{ XR_TYPE_SPACE_LOCATION };
-		XR_CheckResult(xrLocateSpace(m_gripSpace[i], m_trackingSpace, gXR->GetNextFrameDisplayTime(), &location), "locating grip space", m_instance);
-
+		Matrix34 controllerTransform;
 		// the grip pose has a peculiar orientation that we need to fix
 		Matrix33 correction = Matrix33::CreateRotationX(-gf_PI/2);
-		Matrix34 controllerTransform = OpenXRToCrysis(location.pose.orientation, location.pose.position) * correction;
+		if (m_usingWinlatorXR)
+		{
+			if (!m_wxrState.valid)
+				continue;
+			controllerTransform = GetWinlatorControllerPose(i) * correction;
+		}
+		else
+		{
+			XrSpaceLocation location{ XR_TYPE_SPACE_LOCATION };
+			XR_CheckResult(xrLocateSpace(m_gripSpace[i], m_trackingSpace, gXR->GetNextFrameDisplayTime(), &location), "locating grip space", m_instance);
+			controllerTransform = OpenXRToCrysis(location.pose.orientation, location.pose.position) * correction;
+		}
 
 		Vec3 controllerPos = controllerTransform.GetTranslation();
 		Quat controllerRot = Quat(controllerTransform);
@@ -1014,11 +1088,21 @@ bool OpenXRInput::CalcControllerHudIntersection(int hand, float& x, float& y)
 {
 	hand = clamp_tpl(hand, 0, 1);
 
-	XrSpaceLocation location{ XR_TYPE_SPACE_LOCATION };
-	XR_CheckResult(xrLocateSpace(m_gripSpace[hand], m_trackingSpace, gXR->GetNextFrameDisplayTime(), &location), "locating grip space", m_instance);
 	// need to massage the pose orientation a little bit to work in our favour
 	Matrix33 correction = Matrix33::CreateRotationXYZ(Ang3(-gf_PI/3, 0, 0));
-	Matrix34 controllerTransform = OpenXRToCrysis(location.pose.orientation, location.pose.position) * correction;
+	Matrix34 controllerTransform;
+	if (m_usingWinlatorXR)
+	{
+		if (!m_wxrState.valid)
+			return false;
+		controllerTransform = GetWinlatorControllerPose(hand) * correction;
+	}
+	else
+	{
+		XrSpaceLocation location{ XR_TYPE_SPACE_LOCATION };
+		XR_CheckResult(xrLocateSpace(m_gripSpace[hand], m_trackingSpace, gXR->GetNextFrameDisplayTime(), &location), "locating grip space", m_instance);
+		controllerTransform = OpenXRToCrysis(location.pose.orientation, location.pose.position) * correction;
+	}
 
 	XrPosef hudPose = gXR->GetHudPose();
 	Matrix34 hudTransform = OpenXRToCrysis(hudPose.orientation, hudPose.position);
@@ -1052,4 +1136,283 @@ void OpenXRInput::DestroyAction(XrAction& action)
 {
 	xrDestroyAction(action);
 	action = XR_NULL_HANDLE;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// WinlatorXR backend
+// ---------------------------------------------------------------------------------------------------
+
+void OpenXRInput::InitWinlatorXR()
+{
+	m_usingWinlatorXR = true;
+
+	// hand the gameplay code synthetic handles; GetBoolState/GetFloatState resolve them per frame
+	m_primaryFire.handle = WxrHandle(WXR_PRIMARY_FIRE);
+	m_sprint.handle = WxrHandle(WXR_SPRINT);
+	m_reload.handle = WxrHandle(WXR_RELOAD);
+	m_menu.handle = WxrHandle(WXR_MENU);
+	m_suitMenu.handle = WxrHandle(WXR_SUIT_MENU);
+	m_binoculars.handle = WxrHandle(WXR_BINOCULARS);
+	m_nextWeapon.handle = WxrHandle(WXR_NEXT_WEAPON);
+	m_use.handle = WxrHandle(WXR_USE);
+	m_gripUse.handle = WxrHandle(WXR_GRIP_USE);
+	m_nightvision.handle = WxrHandle(WXR_NIGHTVISION);
+	m_melee.handle = WxrHandle(WXR_MELEE);
+	m_grenades.handle = WxrHandle(WXR_GRENADES);
+	m_menuClick.handle = WxrHandle(WXR_MENU_CLICK);
+	m_menuBack.handle = WxrHandle(WXR_MENU_BACK);
+	m_dropWeapon.handle = WxrHandle(WXR_DROP_WEAPON);
+	m_vecBoost.handle = WxrHandle(WXR_VEC_BOOST);
+	m_vecAfterburner.handle = WxrHandle(WXR_VEC_AFTERBURNER);
+	m_vecSecondaryFire.handle = WxrHandle(WXR_VEC_SECONDARY_FIRE);
+	m_vecAscend.handle = WxrHandle(WXR_VEC_ASCEND);
+	m_vecHorn.handle = WxrHandle(WXR_VEC_HORN);
+	m_vecLights.handle = WxrHandle(WXR_VEC_LIGHTS);
+	m_vecExit.handle = WxrHandle(WXR_VEC_EXIT);
+	m_vecSwitchSeatView.handle = WxrHandle(WXR_VEC_SWITCH);
+	m_moveX = WxrHandle(WXR_MOVE_X);
+	m_moveY = WxrHandle(WXR_MOVE_Y);
+	m_rotateYaw = WxrHandle(WXR_ROTATE_YAW);
+	m_rotatePitch = WxrHandle(WXR_ROTATE_PITCH);
+	m_jumpCrouch = WxrHandle(WXR_JUMP_CROUCH);
+	m_grip[0] = WxrHandle(WXR_LGRIP);
+	m_grip[1] = WxrHandle(WXR_RGRIP);
+	m_trigger[0] = WxrHandle(WXR_LTRIGGER);
+	m_trigger[1] = WxrHandle(WXR_RTRIGGER);
+
+	// the same press/long-press semantics as the OpenXR path (see CreateInputActions)
+	auto setup = [](BooleanAction& action, ActionId* onPress, ActionId* onLongPress = nullptr, bool sendRelease = true, bool sendLongRelease = true, bool pressOnRelease = false, float longPressActivationTime = 0.25f)
+	{
+		action.onPress = onPress;
+		action.onLongPress = onLongPress;
+		action.sendRelease = sendRelease;
+		action.sendLongRelease = sendLongRelease;
+		action.pressOnRelease = pressOnRelease;
+		action.longPressActivationTime = longPressActivationTime;
+		action.longPressActive = false;
+		action.timePressed = -1;
+	};
+	setup(m_primaryFire, &g_pGameActions->attack1);
+	setup(m_suitMenu, &g_pGameActions->defensemode, &g_pGameActions->hud_suit_menu, false, true, false, 0.15f);
+	setup(m_menu, &g_pGameActions->xi_hud_back);
+	setup(m_sprint, &g_pGameActions->sprint);
+	setup(m_reload, &g_pGameActions->reload, &g_pGameActions->firemode);
+	setup(m_nextWeapon, &g_pGameActions->nextitem, nullptr, false);
+	setup(m_use, &g_pGameActions->xi_use);
+	setup(m_gripUse, &g_pGameActions->use);
+	setup(m_binoculars, &g_pGameActions->xi_binoculars);
+	setup(m_nightvision, &g_pGameActions->hud_night_vision);
+	setup(m_melee, &g_pGameActions->special);
+	setup(m_grenades, &g_pGameActions->handgrenade, &g_pGameActions->grenade);
+	setup(m_menuClick, &g_pGameActions->hud_mouseclick);
+	setup(m_menuBack, nullptr);
+	setup(m_dropWeapon, &g_pGameActions->drop);
+	setup(m_vecBoost, &g_pGameActions->v_boost);
+	setup(m_vecAfterburner, &g_pGameActions->v_afterburner);
+	setup(m_vecAscend, &g_pGameActions->v_moveup);
+	setup(m_vecSecondaryFire, &g_pGameActions->zoom);
+	setup(m_vecExit, &g_pGameActions->use, nullptr, false, false, true);
+	setup(m_vecHorn, &g_pGameActions->v_horn);
+	setup(m_vecLights, &g_pGameActions->v_lights);
+	setup(m_vecSwitchSeatView, &g_pGameActions->v_changeseat, &g_pGameActions->v_changeview, false, false);
+
+	for (int i = 0; i < 2; ++i)
+	{
+		m_wxrVelocity[i] = Vec3(0, 0, 0);
+		m_controllerPos[i] = Vec3(0, 0, 0);
+		m_controllerRot[i] = Quat::CreateIdentity();
+	}
+
+	CryLogAlways("[WinlatorXR] controller input backend initialised (Touch-style bindings)");
+}
+
+void OpenXRInput::SetWxrBool(WxrAction action, bool state)
+{
+	WxrBool& b = m_wxrBool[action];
+	// 'state' persists across frames (only 'active'/'changed' are reset per frame), so this is a
+	// proper edge detection like OpenXR's changedSinceLastSync
+	b.changed = (b.state != state);
+	b.state = state;
+	b.active = true;
+}
+
+void OpenXRInput::SetWxrFloat(WxrAction action, float value)
+{
+	WxrFloat& f = m_wxrFloat[action];
+	f.active = true;
+	f.value = value;
+}
+
+void OpenXRInput::UpdateWinlatorXRActions()
+{
+	// Mark everything inactive first; SetWxr* re-activates what is bound. Unbound actions stay inactive
+	// so the gameplay code takes the same fallbacks as for unbound OpenXR actions.
+	for (int a = 0; a < WXR_ACTION_COUNT; ++a)
+	{
+		m_wxrBool[a].active = false;
+		m_wxrBool[a].changed = false;
+		m_wxrFloat[a].active = false;
+	}
+
+	WinlatorXR::InputState state = WinlatorXR::GetLatestState();
+	if (!state.valid)
+		return;
+
+	// controller velocity: finite difference of the aim position between two distinct packets
+	if (m_wxrState.valid && state.frameId != m_wxrState.frameId && state.receiveTimeMs > m_wxrState.receiveTimeMs)
+	{
+		float dt = (state.receiveTimeMs - m_wxrState.receiveTimeMs) * 0.001f;
+		if (dt >= 0.004f && dt <= 0.5f)
+		{
+			const WinlatorXR::HandState* cur[2] = { &state.left, &state.right };
+			const WinlatorXR::HandState* prev[2] = { &m_wxrState.left, &m_wxrState.right };
+			for (int i = 0; i < 2; ++i)
+			{
+				XrVector3f delta = { cur[i]->posX - prev[i]->posX, cur[i]->posY - prev[i]->posY, cur[i]->posZ - prev[i]->posZ };
+				m_wxrVelocity[i] = OpenXRToCrysis(delta) / dt;
+			}
+		}
+	}
+	m_wxrState = state;
+
+	// Mirror the Touch bindings from SuggestBindings, with the same <weapon>/<movement> hand
+	// substitution. Per hand, the "lower"/"upper" face buttons are A/B on the right and X/Y on the left.
+	int w = clamp_tpl(g_pGameCVars->vr_weapon_hand, 0, 1);
+	int nw = 1 - w;
+	int m = clamp_tpl(g_pGameCVars->vr_movement_hand, 0, 1);
+	int nm = 1 - m;
+	bool lower[2] = { state.lButtonX, state.rButtonA };
+	bool upper[2] = { state.lButtonY, state.rButtonB };
+	bool trigger[2] = { state.lTrigger, state.rTrigger };
+	bool grip[2] = { state.lGrip, state.rGrip };
+	bool stickClick[2] = { state.lThumbstickPress, state.rThumbstickPress };
+	float thumbX[2] = { state.left.thumbX, state.right.thumbX };
+	float thumbY[2] = { state.left.thumbY, state.right.thumbY };
+
+	// --- ingame ---
+	SetWxrBool(WXR_PRIMARY_FIRE, trigger[w]);
+	SetWxrFloat(WXR_MOVE_X, thumbX[m]);
+	SetWxrFloat(WXR_MOVE_Y, thumbY[m]);
+	SetWxrFloat(WXR_ROTATE_YAW, thumbX[nm]);
+	SetWxrFloat(WXR_JUMP_CROUCH, thumbY[nm]);
+	SetWxrFloat(WXR_ROTATE_PITCH, thumbY[nm]);
+	SetWxrBool(WXR_SPRINT, stickClick[m]);
+	// Deliberate differences to the Touch profile: WinlatorXR reserves the right thumbstick click for
+	// its own menu and maps the left controller's menu button to Esc, so the game menu goes on that
+	// menu button (it is our menu toggle in-game; in the flat menus WinlatorXR's Esc closes them) and
+	// the suit menu moves from the stick click to the non-weapon upper face button (Y).
+	SetWxrBool(WXR_MENU, state.lMenu);
+	SetWxrBool(WXR_RELOAD, lower[w]);
+	SetWxrBool(WXR_SUIT_MENU, upper[nw]);
+	SetWxrBool(WXR_NEXT_WEAPON, grip[w]);
+	SetWxrBool(WXR_USE, trigger[nw]);
+	SetWxrBool(WXR_GRIP_USE, grip[nw]);
+	SetWxrBool(WXR_BINOCULARS, lower[nw]);
+	SetWxrBool(WXR_GRENADES, upper[w]);
+	// WXR_NIGHTVISION / WXR_MELEE are unbound on Touch as well (melee is a physical swing)
+
+	// --- menu ---
+	SetWxrBool(WXR_MENU_CLICK, trigger[w] || lower[w]);
+	SetWxrBool(WXR_MENU_BACK, upper[w]);
+	SetWxrBool(WXR_DROP_WEAPON, lower[m]);
+
+	// --- vehicles ---
+	SetWxrBool(WXR_VEC_BOOST, grip[m]);
+	SetWxrBool(WXR_VEC_AFTERBURNER, grip[m]);
+	SetWxrBool(WXR_VEC_ASCEND, lower[nm]);
+	SetWxrBool(WXR_VEC_SWITCH, upper[nm]);
+	SetWxrBool(WXR_VEC_SECONDARY_FIRE, trigger[nw]);
+	// horn is the non-movement stick click on Touch, which WinlatorXR reserves - left unbound
+	SetWxrBool(WXR_VEC_LIGHTS, stickClick[m]);
+	SetWxrBool(WXR_VEC_EXIT, lower[m]);
+
+	// --- analog grips/triggers (digital in the packet) ---
+	SetWxrFloat(WXR_LGRIP, state.lGrip ? 1.f : 0.f);
+	SetWxrFloat(WXR_RGRIP, state.rGrip ? 1.f : 0.f);
+	SetWxrFloat(WXR_LTRIGGER, state.lTrigger ? 1.f : 0.f);
+	SetWxrFloat(WXR_RTRIGGER, state.rTrigger ? 1.f : 0.f);
+}
+
+Matrix34 OpenXRInput::GetWinlatorControllerPose(int hand) const
+{
+	// Position: the aim pose (a few cm in front of where OpenXR's grip pose sits - close enough).
+	// Orientation: the grip pose when the protocol provides it, because that is what the OpenXR path
+	// binds and what the mod's weapon/hand code is tuned for; otherwise fall back to the aim
+	// orientation, which points the weapon along the controller instead of the handle.
+	const WinlatorXR::HandState& h = hand == 0 ? m_wxrState.left : m_wxrState.right;
+	XrQuaternionf q = { h.qx, h.qy, h.qz, h.qw };
+	if (m_wxrState.hasGripOrientation)
+	{
+		q.x = h.gripQx; q.y = h.gripQy; q.z = h.gripQz; q.w = h.gripQw;
+	}
+	else if (!m_wxrWarnedNoGrip)
+	{
+		const_cast<OpenXRInput*>(this)->m_wxrWarnedNoGrip = true;
+		CryLogAlways("[WinlatorXR] packets carry no grip orientation (protocol < 0.5?) - using aim pose for the hands");
+	}
+	float len = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+	if (len < 1e-4f)
+		return Matrix34::CreateIdentity();
+	q.x /= len; q.y /= len; q.z /= len; q.w /= len;
+
+	// same floor-relative lift as the head pose (see OpenXRRuntime::UpdateWinlatorXRPose)
+	XrVector3f pos = { h.posX, h.posY + gXR->GetWinlatorFloorOffset(), h.posZ };
+	return OpenXRToCrysis(q, pos);
+}
+
+void OpenXRInput::GetBoolState(XrAction action, XrActionStateBoolean& out)
+{
+	if (!m_usingWinlatorXR)
+	{
+		XrActionStateGetInfo getInfo{ XR_TYPE_ACTION_STATE_GET_INFO };
+		getInfo.subactionPath = XR_NULL_PATH;
+		getInfo.action = action;
+		XR_CheckResult(xrGetActionStateBoolean(m_session, &getInfo, &out), "getting boolean action state", m_instance);
+		return;
+	}
+
+	out.isActive = XR_FALSE;
+	out.currentState = XR_FALSE;
+	out.changedSinceLastSync = XR_FALSE;
+	out.lastChangeTime = 0;
+	WxrAction id = WxrFromHandle(action);
+	if (id == WXR_NONE)
+		return;
+	const WxrBool& b = m_wxrBool[id];
+	out.isActive = b.active ? XR_TRUE : XR_FALSE;
+	out.currentState = b.state ? XR_TRUE : XR_FALSE;
+	out.changedSinceLastSync = b.changed ? XR_TRUE : XR_FALSE;
+}
+
+void OpenXRInput::GetFloatState(XrAction action, XrActionStateFloat& out)
+{
+	if (!m_usingWinlatorXR)
+	{
+		XrActionStateGetInfo getInfo{ XR_TYPE_ACTION_STATE_GET_INFO };
+		getInfo.subactionPath = XR_NULL_PATH;
+		getInfo.action = action;
+		xrGetActionStateFloat(m_session, &getInfo, &out);
+		return;
+	}
+
+	out.isActive = XR_FALSE;
+	out.currentState = 0.f;
+	out.changedSinceLastSync = XR_FALSE;
+	out.lastChangeTime = 0;
+	WxrAction id = WxrFromHandle(action);
+	if (id == WXR_NONE)
+		return;
+	const WxrFloat& f = m_wxrFloat[id];
+	out.isActive = f.active ? XR_TRUE : XR_FALSE;
+	out.currentState = f.value;
+}
+
+float OpenXRInput::GetWinlatorHapticAmplitude(int side) const
+{
+	side = clamp_tpl(side, 0, 1);
+	if (!m_usingWinlatorXR || m_wxrHapticAmplitude[side] <= 0.f)
+		return 0.f;
+	if (gEnv->pTimer->GetAsyncCurTime() >= m_wxrHapticEndTime[side])
+		return 0.f;
+	return m_wxrHapticAmplitude[side];
 }

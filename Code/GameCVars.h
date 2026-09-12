@@ -472,6 +472,13 @@ struct SCVars
 	int vr_enable_frustum_tweaks;
 
 	int vr_controller_smoothing;
+	// WinlatorXR (standalone Quest/Pico via Wine) backend settings, see VR/WinlatorXR.h
+	int vr_winlatorxr_render_height;
+	int vr_winlatorxr_aer;
+	int vr_winlatorxr_max_fps;
+	int vr_winlatorxr_block_desktop_input;
+	int vr_winlatorxr_native_menu_pointer;
+	float vr_height_offset;
 	float vr_controller_smoothing_speed;
 
 	SCVars()

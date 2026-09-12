@@ -46,3 +46,10 @@ Bin64
 Code/Shaders/generated
 
 Installer/assembly
+
+# Quest package build outputs
+Quest/CrysisVR-Installer/
+Quest/CrysisVR-Quest/
+Quest/*.zip
+Bin32/
+Bin64/

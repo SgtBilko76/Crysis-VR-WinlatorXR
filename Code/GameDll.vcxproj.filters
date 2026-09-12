@@ -689,6 +689,9 @@
     <ClCompile Include="VR\VRRenderer.cpp">
       <Filter>VR Mod</Filter>
     </ClCompile>
+    <ClCompile Include="VR\WinlatorXR.cpp">
+      <Filter>VR Mod</Filter>
+    </ClCompile>
     <ClCompile Include="VR\VRManager.cpp">
       <Filter>VR Mod</Filter>
     </ClCompile>
@@ -1923,6 +1926,9 @@
     <ClInclude Include="VR\VRRenderer.h">
       <Filter>VR Mod</Filter>
     </ClInclude>
+    <ClInclude Include="VR\WinlatorXR.h">
+      <Filter>VR Mod</Filter>
+    </ClInclude>
     <ClInclude Include="VR\VRManager.h">
       <Filter>VR Mod</Filter>
     </ClInclude>
@@ -1997,6 +2003,9 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Shaders\DrawTexture.ps.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\SolidColor.ps.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
     <FxCompile Include="Shaders\FullScreenTri.vs.hlsl">

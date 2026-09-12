@@ -7,6 +7,7 @@
 
 #include "GameCVars.h"
 #include "OpenXRRuntime.h"
+#include "WinlatorXR.h"
 
 namespace
 {
@@ -18,19 +19,35 @@ VRHaptics* gHaptics = &haptics;
 
 void VRHaptics::Init()
 {
+	if (WinlatorXR::IsLikelyPresent())
+	{
+		// no vest / ProTube on a standalone headset, and the SDKs' network / device discovery is
+		// better left untouched under Wine
+		CryLogAlways("WinlatorXR detected - bHaptics / ProTubeVR support disabled");
+		m_externalHapticsReady = false;
+		return;
+	}
+
 	InitialiseSync("crysisvr", "Crysis VR");
 	InitRifle();
+	m_externalHapticsReady = true;
 	InitEffects();
 	CryLogAlways("Initialised bHaptics support");
 }
 
 void VRHaptics::Shutdown()
 {
+	if (!m_externalHapticsReady)
+		return;
+	m_externalHapticsReady = false;
 	Destroy();
 }
 
 void VRHaptics::RegisterBHapticsEffect(const char* key, const char* file)
 {
+	if (!m_externalHapticsReady)
+		return;
+
 	if (IsFeedbackRegistered(key))
 	{
 		return;
@@ -58,11 +75,17 @@ void VRHaptics::RegisterBHapticsEffect(const char* key, const char* file)
 
 void VRHaptics::TriggerBHapticsEffect(const char* key, float intensity, float offsetAngleX, float offsetY)
 {
+	if (!m_externalHapticsReady)
+		return;
+
 	SubmitRegisteredWithOption(key, key, intensity * g_pGameCVars->vr_bhaptics_strength, 1.0f, offsetAngleX, offsetY);
 }
 
 void VRHaptics::TriggerBHapticsEffect(const char* key, float intensity, const Vec3& pos, const Vec3& dir)
 {
+	if (!m_externalHapticsReady)
+		return;
+
 	CPlayer* player = gVR->GetLocalPlayer();
 	if (!player)
 		return;
@@ -98,16 +121,25 @@ void VRHaptics::TriggerBHapticsEffectForSide(EVRHand hand, const char* keyLeft, 
 
 bool VRHaptics::IsBHapticsEffectPlaying(const char* key) const
 {
+	if (!m_externalHapticsReady)
+		return false;
+
 	return IsPlayingKey(key);
 }
 
 void VRHaptics::StopBHapticsEffect(const char* key)
 {
+	if (!m_externalHapticsReady)
+		return;
+
 	TurnOffKey(key);
 }
 
 void VRHaptics::TriggerProtubeEffect(float kickPower, float rumblePower, float rumbleSeconds, bool offHand)
 {
+	if (!m_externalHapticsReady)
+		return;
+
 	if (kickPower > 0)
 	{
 		if (rumblePower > 0 && rumbleSeconds > 0)
@@ -157,6 +189,9 @@ void VRHaptics::InitEffects()
 
 void VRHaptics::ProtubeKick(float power, bool offHand)
 {
+	if (!m_externalHapticsReady)
+		return;
+
 	uint8 pw = clamp_tpl(power, 0.f, 1.f) * 255;
 	ForceTubeVRChannel channel = offHand ? rifleBolt : rifleButt;
 	KickChannel(pw, channel);
@@ -164,6 +199,9 @@ void VRHaptics::ProtubeKick(float power, bool offHand)
 
 void VRHaptics::ProtubeRumble(float power, float seconds, bool offHand)
 {
+	if (!m_externalHapticsReady)
+		return;
+
 	uint8 pw = clamp_tpl(power, 0.f, 1.f) * 255;
 	ForceTubeVRChannel channel = offHand ? rifleBolt : rifleButt;
 	RumbleChannel(pw, seconds, channel);
@@ -171,6 +209,9 @@ void VRHaptics::ProtubeRumble(float power, float seconds, bool offHand)
 
 void VRHaptics::ProtubeShot(float kickPower, float rumblePower, float rumbleSeconds, bool offHand)
 {
+	if (!m_externalHapticsReady)
+		return;
+
 	uint8 kpw = clamp_tpl(kickPower, 0.f, 1.f) * 255;
 	uint8 rpw = clamp_tpl(rumblePower, 0.f, 1.f) * 255;
 	ForceTubeVRChannel channel = offHand ? rifleBolt : rifleButt;
