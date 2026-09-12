@@ -1,3 +1,6 @@
+<img width="454" height="186" alt="crysisvr_logo" src="https://github.com/user-attachments/assets/77a8942c-5ff5-4f6a-a428-cd45d53b6084" />
+
+
 # Crysis Quest VR Mod
 
 [![Ko-Fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/fholger)
