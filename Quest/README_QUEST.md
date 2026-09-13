@@ -1,4 +1,4 @@
-# Crysis VR — Meta Quest 3 (Standalone) via WinlatorXR — BETA 0.1
+# Crysis VR — Meta Quest 3 (Standalone) via WinlatorXR — BETA 0.2
 
 Play **Crysis (2007)** in VR **standalone on a Meta Quest 3**, via the
 [`crysis_vrmod`](https://github.com/fholger/crysis_vrmod) mod running under
@@ -132,7 +132,7 @@ tanks the frame rate regardless of settings.
 | Left grip | Grab weapon with off hand (two-handed aiming) |
 | **A** | Reload (hold: fire mode) |
 | **B** | Grenade (tap: cycle, hold: throw) |
-| **X** | Binoculars |
+| **X** | Binoculars (the zoomed view appears on a panel at your left hand: raise it in front of your eyes and point it to aim) |
 | **Y** | Suit menu (tap: armor mode, hold: open suit menu, then move hand and release) |
 | **Left menu button** | Game menu / objectives |
 | Right stick | Turn (45° snap); push up = jump, down = crouch/prone |
@@ -159,6 +159,10 @@ In the flat menus, WinlatorXR's own controller pointer is the mouse:
 - **AER** gives full per-eye resolution but each eye refreshes at half the
   composite rate; set `vr_winlatorxr_aer 0` for side-by-side if you prefer.
 - **Vehicle HUD** is approximated as a flat panel in the aim direction.
+- **Binoculars, weapon scopes and 2D cutscenes** are shown like on PC: as a panel
+  in a head-tracked view (binoculars at your left hand, scopes and cutscenes
+  fixed in front of you) over a black background. The panel always faces you.
+  `vr_winlatorxr_2d_panel 0` restores the old flat WinlatorXR screen.
 - **Resolution ceiling:** keep the ~1.10 aspect (e.g. `1792x1624` or
   `1591x1440`). The game is a 32-bit process here, so do not exceed ~1792 wide
   and keep `vr_winlatorxr_render_height` moderate (address space).

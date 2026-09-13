@@ -8,7 +8,7 @@ REM  Quest\CrysisVR-Installer-Beta-<version>.zip (Far Cry VR Quest beta layout).
 REM  Build the solution (both platforms) and the c1-launcher first.
 REM ============================================================================
 setlocal
-set VERSION=0.1
+set VERSION=0.2
 set CURRENT_DIR=%~dp0
 set PACKAGE_DIR=%CURRENT_DIR%CrysisVR-Installer
 set ZIP_FILE=%CURRENT_DIR%CrysisVR-Installer-Beta-%VERSION%.zip

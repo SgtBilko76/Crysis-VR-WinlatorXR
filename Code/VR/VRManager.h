@@ -140,7 +140,9 @@ private:
 	void ComposeWinlatorXRFrame();
 	// draws the captured HUD texture for 'eye' into the frame region, positioned like the OpenXR quad
 	// layer would be (fronto-parallel approximation of the HUD pose maintained in gXR)
-	void DrawWinlatorHud(int eye, const VRRect& region);
+	// opaquePanel: draw the captured texture without alpha blending (used for the 2D view panel of
+	// binoculars/scopes/2D cinema, whose alpha channel is not meaningful)
+	void DrawWinlatorHud(int eye, const VRRect& region, bool opaquePanel = false);
 	// Force the game window borderless and pinned to the X-screen top-left (0,0) at full size. WinlatorXR
 	// reads the frame-sync pixel at screen (0,0) and stops rendering the stereo view if it can't find it;
 	// a title bar or an offset window would shift our composited frame. Re-asserted each frame, only

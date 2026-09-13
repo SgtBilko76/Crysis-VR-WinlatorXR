@@ -1,4 +1,4 @@
-CRYSIS VR (Meta Quest / WinlatorXR) - MOD INSTALLER - BETA 0.1
+CRYSIS VR (Meta Quest / WinlatorXR) - MOD INSTALLER - BETA 0.2
 ==============================================================
 
 This package installs the Crysis VR mod + tuned settings onto an EXISTING
@@ -68,7 +68,8 @@ CONTROLS (right-handed defaults)
   Right grip = holster/switch weapon (hip, shoulder, chest)
   Left grip  = grab weapon with off hand (two-handed aiming)
   A = reload (hold: fire mode)   B = grenade (tap cycle / hold throw)
-  X = binoculars                 Y = suit menu (tap: armor, hold: menu)
+  X = binoculars (panel at left hand; raise it and point to aim)
+  Y = suit menu (tap: armor, hold: menu)
   Left menu button = game menu   Right stick click = free (WinlatorXR menu)
   Right stick = turn / 45 snap; up = jump, down = crouch/prone
   Left stick = move; click = sprint

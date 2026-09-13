@@ -1532,6 +1532,12 @@ void VRManager::ComposeWinlatorXRFrame()
 	int aerEye = gXR->CurrentAerEye();
 	bool vrWorld = !inMenu && renderMode == RM_VR && gXR->ArePosesValid() && (aer ? m_eyeViews[aerEye].Get() != nullptr : haveEyes);
 	bool stereoPlane = !inMenu && renderMode == RM_3D && haveEyes;
+	// Binoculars, weapon scopes, 2D cutscenes and 2D vehicles: show the flat 2D view the way the OpenXR
+	// HUD layer does on PC - as a panel at the HUD pose (the off hand for binoculars, fixed in front of
+	// the player otherwise) inside a head-tracked VR frame - instead of on WinlatorXR's virtual screen,
+	// where head movement would change nothing.
+	bool panel2D = !inMenu && renderMode == RM_2D && gXR->ArePosesValid() && m_hudView.Get() != nullptr
+		&& g_pGameCVars->vr_winlatorxr_2d_panel != 0;
 
 	D3D10StateGuard stateGuard(m_device.Get());
 	ID3D10RenderTargetView* rtvs[1] = { rtv.Get() };
@@ -1575,10 +1581,32 @@ void VRManager::ComposeWinlatorXRFrame()
 			gXR->SetWinlatorFrameMode(2, 1);
 		}
 	}
+	else if (panel2D)
+	{
+		// The back buffer (captured into the HUD texture) holds the zoomed/flat view plus HUD. Draw it
+		// opaque on a black background, per eye, and mark the frame as a head-tracked VR frame.
+		gVRRenderUtils->FillRect(full, ColorF(0.f, 0.f, 0.f, 1.f), false);
+		if (aer)
+		{
+			DrawWinlatorHud(aerEye, full, true);
+			gVRRenderUtils->FillRect(VRRect(0, 0, 8, 8), ColorF(syncId / 255.f, 0.f, aerEye == 1 ? 1.f : 0.f, 1.f), false);
+			gXR->SetWinlatorFrameMode(1, 2);
+		}
+		else
+		{
+			int halfWidth = width / 2;
+			for (int eye = 0; eye < 2; ++eye)
+			{
+				DrawWinlatorHud(eye, VRRect(eye * halfWidth, 0, halfWidth, height), true);
+			}
+			gVRRenderUtils->FillRect(VRRect(0, 0, 8, 8), ColorF(syncId / 255.f, 0.f, 0.f, 1.f), false);
+			gXR->SetWinlatorFrameMode(1, 1);
+		}
+	}
 	else
 	{
-		// flat frame (menu, loading screen, binoculars, weapon scope, 2D cinema): let WinlatorXR show
-		// the back buffer as-is on its virtual screen
+		// flat frame (menu, loading screen, or the 2D modes with vr_winlatorxr_2d_panel 0): let
+		// WinlatorXR show the back buffer as-is on its virtual screen
 		gXR->SetWinlatorFrameMode(2, 0);
 	}
 
@@ -1587,9 +1615,10 @@ void VRManager::ComposeWinlatorXRFrame()
 	gVRRenderUtils->FillRect(full, ColorF(0.f, 0.f, 0.f, 1.f), true);
 }
 
-void VRManager::DrawWinlatorHud(int eye, const VRRect& region)
+void VRManager::DrawWinlatorHud(int eye, const VRRect& region, bool opaquePanel)
 {
-	if (!m_hudView || !gXR->IsHudVisible())
+	// the 2D view panel is the scene itself, so it is shown even when the in-game HUD is hidden
+	if (!m_hudView || (!opaquePanel && !gXR->IsHudVisible()))
 		return;
 
 	// The HUD quad pose/size are maintained in gXR exactly like for the OpenXR quad layer (see
@@ -1629,7 +1658,7 @@ void VRManager::DrawWinlatorHud(int eye, const VRRect& region)
 
 	VRRect dest((int)floorf(x0 + 0.5f), (int)floorf(y0 + 0.5f), (int)floorf(x1 - x0 + 0.5f), (int)floorf(y1 - y0 + 0.5f));
 	// never bleed outside this eye's region (matters for side-by-side)
-	gVRRenderUtils->DrawTextureRect(m_hudView.Get(), dest, &region, VRRenderUtils::RB_ALPHA);
+	gVRRenderUtils->DrawTextureRect(m_hudView.Get(), dest, &region, opaquePanel ? VRRenderUtils::RB_OPAQUE : VRRenderUtils::RB_ALPHA);
 }
 
 void VRManager::EnsureWinlatorXRWindow()

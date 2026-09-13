@@ -478,6 +478,7 @@ struct SCVars
 	int vr_winlatorxr_max_fps;
 	int vr_winlatorxr_block_desktop_input;
 	int vr_winlatorxr_native_menu_pointer;
+	int vr_winlatorxr_2d_panel;
 	float vr_height_offset;
 	float vr_controller_smoothing_speed;
 
