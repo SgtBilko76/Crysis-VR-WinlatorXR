@@ -60,6 +60,15 @@ struct IGameObjectExtensionCreatorBase
 	virtual void GetGameObjectExtensionRMIData( void ** ppRMI, size_t * nCount ) = 0;
 };
 
+#if defined(__clang__)
+// clang checks the covariant I##name* return type below when the template is defined, before
+// IActor/IItem/IVehicle are complete. The creators are only called through
+// IGameObjectExtensionCreatorBase*, so returning the base type is equivalent there.
+#	define GAMEOBJECTEXTENSION_CREATOR_RESULT(name) IGameObjectExtension
+#else
+#	define GAMEOBJECTEXTENSION_CREATOR_RESULT(name) I##name
+#endif
+
 #define DECLARE_GAMEOBJECTEXTENSION_FACTORY(name) \
 	struct I##name##Creator : public IGameObjectExtensionCreatorBase \
 	{ \
@@ -67,7 +76,7 @@ struct IGameObjectExtensionCreatorBase
 	template <class T> \
 	struct C##name##Creator : public I##name##Creator \
 	{ \
-		I##name * Create() \
+		GAMEOBJECTEXTENSION_CREATOR_RESULT(name) * Create() \
 		{ \
 			return new T(); \
 		} \

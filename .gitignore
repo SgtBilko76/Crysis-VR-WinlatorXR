@@ -53,3 +53,6 @@ Quest/CrysisVR-Quest/
 Quest/*.zip
 Bin32/
 Bin64/
+
+# Linux cross build intermediates (tools/xbuild) and old MSVC intermediates
+BinTemp/

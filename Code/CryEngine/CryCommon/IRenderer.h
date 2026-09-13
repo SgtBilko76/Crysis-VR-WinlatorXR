@@ -92,7 +92,7 @@ typedef float vec2_t[2];
 
 //DOC-IGNORE-BEGIN
 #include "Cry_Color.h"
-#include "Tarray.h"
+#include "TArray.h"
 
 #include <IFont.h>
 //DOC-IGNORE-END

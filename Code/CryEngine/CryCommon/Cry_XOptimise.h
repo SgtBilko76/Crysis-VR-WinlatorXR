@@ -541,6 +541,14 @@ ILINE void cryPrefetchT0SSE(const void *src)
 
 #if defined _CPU_X86 && !defined(LINUX)
 // Inline assembly syntax for use with Visual C++
+#if defined(__clang__)
+// clang's MS-style inline assembler cannot parse the MASM $labels used by the SSE copy below.
+// Its non-SSE branch is a plain memcpy, so use that on clang (Linux cross build, see tools/xbuild).
+inline void cryMemcpy( void* Dst, const void* Src, int Count )
+{
+  memcpy(Dst, Src, Count);
+}
+#else
 inline void cryMemcpy( void* Dst, const void* Src, int Count )
 {
   if (g_CpuFlags & CPUF_SSE)
@@ -751,6 +759,7 @@ inline void cryMemcpy( void* Dst, const void* Src, int Count )
     memcpy(Dst, Src, Count);
   }
 }
+#endif // __clang__
 
 inline void cryPrefetch(const void* Src, int nCount)
 {

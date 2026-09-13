@@ -277,7 +277,7 @@ void* EXELoader::Load(const char* name)
 	PVFV* xc_z = xc_a;
 
 	// from the beginning of the first array, find the end of the second array
-	for (PVFV* next = xc_z + 1; (*next >= textBegin && *next < textEnd) || *next == NULL; ++next)
+	for (PVFV* next = xc_z + 1; (reinterpret_cast<void*>(*next) >= textBegin && reinterpret_cast<void*>(*next) < textEnd) || *next == NULL; ++next)
 	{
 		xc_z = next;
 	}
