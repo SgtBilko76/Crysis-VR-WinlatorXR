@@ -480,7 +480,6 @@ struct SCVars
 	int vr_winlatorxr_native_menu_pointer;
 	int vr_winlatorxr_2d_panel;
 	int vr_winlatorxr_menu_panel;
-	float vr_winlatorxr_menu_curve_radius;
 	float vr_winlatorxr_fov_scale;
 	float vr_height_offset;
 	float vr_controller_smoothing_speed;

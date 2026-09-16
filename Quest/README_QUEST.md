@@ -96,9 +96,8 @@ right `screenSize` and launches the **32-bit** game, `D:\Crysis\Bin32\CrysisVR.e
 From WinlatorXR's **Shortcuts** tab, tap **CrysisVR** (or launch it from a
 frontend). First boot takes several minutes (Box64 + shader compilation).
 **Wear the headset** during boot — if it reads as off-face, the Quest suspends
-the app and it freezes. The intro videos are shown flat on a virtual screen;
-the menus and loading screens appear on a curved screen standing in the room,
-and stereo + head tracking of the game world start once a level is loaded.
+the app and it freezes. The intro videos and menus are shown flat on a virtual
+screen; stereo + head tracking start once a level is loaded.
 
 ---
 
@@ -162,8 +161,8 @@ Differences to the PC bindings: the suit menu moved from the right stick click
 to **Y** and the game menu to the **left menu button**, because WinlatorXR
 reserves the right stick click and maps the menu button to Esc.
 
-In the menus, point the **right controller** at the curved screen to move the
-mouse cursor: **trigger = click**, **left menu button = Esc/back**.
+In the flat menus, WinlatorXR's own controller pointer is the mouse:
+**trigger = click**, **menu button = Esc/back**.
 
 ---
 
@@ -180,10 +179,9 @@ mouse cursor: **trigger = click**, **left menu button = Esc/back**.
   in a head-tracked view (binoculars at your left hand, scopes and cutscenes
   fixed in front of you) over a black background. The panel always faces you.
   `vr_winlatorxr_2d_panel 0` restores the old flat WinlatorXR screen.
-- **Menus and loading screens** stand 5 m in front of you on a curved screen
-  (placed where you look when the menu opens). `vr_winlatorxr_menu_curve_radius`
-  sets the curvature (0 = flat); `vr_winlatorxr_menu_panel 0` restores the old
-  flat WinlatorXR screen that follows your head.
+- **Menus** use WinlatorXR's flat screen, which follows your head.
+  `vr_winlatorxr_menu_panel 1` (experimental) shows them on a flat panel fixed
+  in the room instead, with the right controller ray as the mouse.
 - **Resolution ceiling:** keep the ~1.10 aspect (e.g. `1592x1440` or
   `1792x1624`). The game is a 32-bit process here, so do not exceed ~1792 wide
   and keep `vr_winlatorxr_render_height` moderate (address space).

@@ -1626,14 +1626,13 @@ void VRManager::ComposeWinlatorXRFrame()
 	// where head movement would change nothing.
 	bool panel2D = !inMenu && renderMode == RM_2D && gXR->ArePosesValid() && m_hudView.Get() != nullptr
 		&& g_pGameCVars->vr_winlatorxr_2d_panel != 0;
-	// Menus and loading screens: like on PC, show them on a panel fixed in the room (the HUD pose is set
-	// by SetHudInFrontOfPlayer while a menu is open) inside a head-tracked frame. WinlatorXR's flat
-	// screen mode would keep the menu glued to the view. The mouse cursor is placed where the controller
-	// points (OpenXRInput::Update); WinlatorXR still delivers the trigger as a left click.
+	// Menus and loading screens: by default on WinlatorXR's flat screen. With vr_winlatorxr_menu_panel 1
+	// they are shown like on PC instead, on a panel fixed in the room (the HUD pose is set by
+	// SetHudInFrontOfPlayer while a menu is open) inside a head-tracked frame; the mouse cursor is then
+	// placed where the controller points (OpenXRInput::Update).
 	bool menuPanel = inMenu && gXR->ArePosesValid() && m_hudView.Get() != nullptr
 		&& g_pGameCVars->vr_winlatorxr_menu_panel != 0;
 	panel2D = panel2D || menuPanel;
-	float panelCurve = menuPanel ? gXR->GetWinlatorMenuCurveRadius() : 0.f;
 
 	D3D10StateGuard stateGuard(m_device.Get());
 	ID3D10RenderTargetView* rtvs[1] = { rtv.Get() };
@@ -1684,7 +1683,7 @@ void VRManager::ComposeWinlatorXRFrame()
 		gVRRenderUtils->FillRect(full, ColorF(0.f, 0.f, 0.f, 1.f), false);
 		if (aer)
 		{
-			DrawWinlatorHud(aerEye, full, true, panelCurve);
+			DrawWinlatorHud(aerEye, full, true);
 			gVRRenderUtils->FillRect(VRRect(0, 0, 8, 8), ColorF(syncId / 255.f, 0.f, aerEye == 1 ? 1.f : 0.f, 1.f), false);
 			gXR->SetWinlatorFrameMode(1, 2);
 		}
@@ -1693,7 +1692,7 @@ void VRManager::ComposeWinlatorXRFrame()
 			int halfWidth = width / 2;
 			for (int eye = 0; eye < 2; ++eye)
 			{
-				DrawWinlatorHud(eye, VRRect(eye * halfWidth, 0, halfWidth, height), true, panelCurve);
+				DrawWinlatorHud(eye, VRRect(eye * halfWidth, 0, halfWidth, height), true);
 			}
 			gVRRenderUtils->FillRect(VRRect(0, 0, 8, 8), ColorF(syncId / 255.f, 0.f, 0.f, 1.f), false);
 			gXR->SetWinlatorFrameMode(1, 1);
@@ -1711,16 +1710,11 @@ void VRManager::ComposeWinlatorXRFrame()
 	gVRRenderUtils->FillRect(full, ColorF(0.f, 0.f, 0.f, 1.f), true);
 }
 
-void VRManager::DrawWinlatorHud(int eye, const VRRect& region, bool opaquePanel, float curveRadius)
+void VRManager::DrawWinlatorHud(int eye, const VRRect& region, bool opaquePanel)
 {
 	// the 2D view panel is the scene itself, so it is shown even when the in-game HUD is hidden
 	if (!m_hudView || (!opaquePanel && !gXR->IsHudVisible()))
 		return;
-	if (curveRadius > 0.f)
-	{
-		DrawWinlatorCurvedPanel(eye, region, curveRadius);
-		return;
-	}
 
 	// The HUD quad pose/size are maintained in gXR exactly like for the OpenXR quad layer (see
 	// SetHudAttachedToHead etc.). Project the quad centre into head space and draw it as a
@@ -1760,82 +1754,6 @@ void VRManager::DrawWinlatorHud(int eye, const VRRect& region, bool opaquePanel,
 	VRRect dest((int)floorf(x0 + 0.5f), (int)floorf(y0 + 0.5f), (int)floorf(x1 - x0 + 0.5f), (int)floorf(y1 - y0 + 0.5f));
 	// never bleed outside this eye's region (matters for side-by-side)
 	gVRRenderUtils->DrawTextureRect(m_hudView.Get(), dest, &region, opaquePanel ? VRRenderUtils::RB_OPAQUE : VRRenderUtils::RB_ALPHA);
-}
-
-static VRRect IntersectRects(const VRRect& a, const VRRect& b)
-{
-	int x0 = max(a.x, b.x), y0 = max(a.y, b.y);
-	int x1 = min(a.x + a.w, b.x + b.w), y1 = min(a.y + a.h, b.y + b.h);
-	return VRRect(x0, y0, max(x1 - x0, 0), max(y1 - y0, 0));
-}
-
-void VRManager::DrawWinlatorCurvedPanel(int eye, const VRRect& region, float radius)
-{
-	// The panel is bent into a section of a vertical cylinder whose axis lies 'radius' in front of the
-	// panel (towards the viewer), so with radius == viewing distance the whole screen is equally far
-	// away. There is no mesh pipeline here (the fullscreen-triangle shader only stretches a texture over
-	// a viewport), so the cylinder is drawn as narrow vertical strips: each strip gets a viewport that
-	// maps its slice of the texture onto the strip's projected x range and is scissored to that range.
-	// Vertical lines stay straight under projection, so only the strip edges are approximated.
-	const int kStrips = 64;
-
-	float tanl, tanr, tant, tanb;
-	gXR->GetFov(eye, tanl, tanr, tant, tanb);
-	float tanH = max(fabsf(tanl), fabsf(tanr));
-	float tanV = max(fabsf(tant), fabsf(tanb));
-	float width = gXR->GetHudWidth();
-	float height = gXR->GetHudHeight();
-	if (tanH <= 0.f || tanV <= 0.f || width <= 0.f || height <= 0.f)
-		return;
-
-	XrPosef hudPose = gXR->GetHudPose();
-	Matrix34 hud = OpenXRToCrysis(hudPose.orientation, hudPose.position);
-	Matrix34 head = Matrix34(gXR->GetHmdTransform());
-	Matrix34 panelToHead = head.GetInvertedFast() * hud;
-	// the left eye sits half the eye separation to the left of the head centre
-	float eyeX = (eye == 0 ? -0.5f : 0.5f) * gXR->GetWinlatorEyeSeparation();
-	float arc = width / radius;
-
-	float edgeX[kStrips + 1], topY[kStrips + 1], bottomY[kStrips + 1];
-	bool visible[kStrips + 1];
-	for (int i = 0; i <= kStrips; ++i)
-	{
-		float theta = ((float)i / kStrips - 0.5f) * arc;
-		// panel space: x right, y away from the viewer, z up; the panel centre is the origin
-		Vec3 onArc(radius * sinf(theta), radius * cosf(theta) - radius, 0.f);
-		Vec3 top = panelToHead.TransformPoint(onArc + Vec3(0, 0, 0.5f * height));
-		Vec3 bottom = panelToHead.TransformPoint(onArc - Vec3(0, 0, 0.5f * height));
-		visible[i] = top.y > 0.05f && bottom.y > 0.05f;
-		if (!visible[i])
-			continue;
-		float xTop = (top.x - eyeX) / top.y;
-		float xBottom = (bottom.x - eyeX) / bottom.y;
-		edgeX[i] = region.x + region.w * (0.5f + 0.5f * (xTop + xBottom) / (2.f * tanH));
-		topY[i] = region.y + region.h * (0.5f - (top.z / top.y) / (2.f * tanV));
-		bottomY[i] = region.y + region.h * (0.5f - (bottom.z / bottom.y) / (2.f * tanV));
-	}
-
-	for (int i = 0; i < kStrips; ++i)
-	{
-		if (!visible[i] || !visible[i + 1])
-			continue;
-		float x0 = edgeX[i], x1 = edgeX[i + 1];
-		if (x1 - x0 < 0.01f)
-			continue;
-		// viewport covering the whole (virtual, flat) texture so that this strip's slice lands on [x0, x1]
-		float viewportWidth = (x1 - x0) * kStrips;
-		float viewportX = x0 - i * (x1 - x0);
-		float y0 = 0.5f * (topY[i] + topY[i + 1]);
-		float y1 = 0.5f * (bottomY[i] + bottomY[i + 1]);
-		if (fabsf(viewportX) > 30000.f || viewportWidth > 30000.f || fabsf(y0) > 30000.f || y1 - y0 > 30000.f)
-			continue;
-		VRRect dest((int)floorf(viewportX + 0.5f), (int)floorf(y0 + 0.5f), (int)floorf(viewportWidth + 0.5f), (int)floorf(y1 - y0 + 0.5f));
-		int sx0 = (int)floorf(x0 + 0.5f), sx1 = (int)floorf(x1 + 0.5f);
-		VRRect scissor = IntersectRects(VRRect(sx0, region.y, sx1 - sx0, region.h), region);
-		if (scissor.w <= 0 || dest.h <= 0)
-			continue;
-		gVRRenderUtils->DrawTextureRect(m_hudView.Get(), dest, &scissor, VRRenderUtils::RB_OPAQUE);
-	}
 }
 
 void VRManager::EnsureWinlatorXRWindow()

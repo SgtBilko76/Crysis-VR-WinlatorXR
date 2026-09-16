@@ -63,8 +63,6 @@ public:
 	// what to tell WinlatorXR to do with the frame that was just composed (see WinlatorXR::SendState)
 	void SetWinlatorFrameMode(int modeVr, int mode3d) { m_winlatorModeVr = modeVr; m_winlatorMode3d = mode3d; }
 	int GetWinlatorModeVr() const { return m_winlatorModeVr; }
-	// radius of the curved menu screen (a vertical cylinder around the viewer), 0 = flat
-	float GetWinlatorMenuCurveRadius() const;
 
 private:
 	OpenXRInput m_input;

@@ -905,15 +905,6 @@ void OpenXRRuntime::CreateHudSwapchain(int width, int height)
 // WinlatorXR backend
 // ---------------------------------------------------------------------------------------------------
 
-float OpenXRRuntime::GetWinlatorMenuCurveRadius() const
-{
-	float radius = g_pGameCVars->vr_winlatorxr_menu_curve_radius;
-	if (radius <= 0.f || m_hudDisplayWidth <= 0.f)
-		return 0.f;
-	// never bend the screen further than a half circle
-	return max(radius, m_hudDisplayWidth / gf_PI);
-}
-
 bool OpenXRRuntime::UseWinlatorAER() const
 {
 	return m_usingWinlatorXR && g_pGameCVars && g_pGameCVars->vr_winlatorxr_aer != 0;
