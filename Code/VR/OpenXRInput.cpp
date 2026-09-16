@@ -186,10 +186,11 @@ void OpenXRInput::Update()
 
 	UpdateControllerPoses();
 
-	// Under WinlatorXR the menus are flat screens operated by WinlatorXR's own controller pointer, which
-	// moves the (Win32) hardware mouse for us; only the in-game HUD (composed by us in VR mode) needs the
-	// controller ray intersection to drive the cursor.
-	bool nativePointer = m_usingWinlatorXR && g_pGameCVars->vr_winlatorxr_native_menu_pointer != 0 && g_pGame->GetMenu() && g_pGame->GetMenu()->IsMenuActive();
+	// Under WinlatorXR a menu shown on WinlatorXR's flat screen is operated by WinlatorXR's own controller
+	// pointer, which moves the (Win32) hardware mouse for us. When we compose the menu ourselves as a panel
+	// in the room (VR frame mode), the controller ray intersection has to drive the cursor, like in-game.
+	bool nativePointer = m_usingWinlatorXR && g_pGameCVars->vr_winlatorxr_native_menu_pointer != 0 && g_pGame->GetMenu() && g_pGame->GetMenu()->IsMenuActive()
+		&& gXR->GetWinlatorModeVr() != 1;
 
 	float pointerX, pointerY;
 	if (!nativePointer && CalcControllerHudIntersection(g_pGameCVars->vr_weapon_hand, pointerX, pointerY))
@@ -1112,6 +1113,32 @@ bool OpenXRInput::CalcControllerHudIntersection(int hand, float& x, float& y)
 
 	Vec3 pos = controllerInHudSpace.GetTranslation();
 	Vec3 dir = controllerInHudSpace.GetColumn1();
+	Vec2 hudSize(gXR->GetHudWidth(), gXR->GetHudHeight());
+
+	// WinlatorXR draws menus on a curved screen (see VRManager::DrawWinlatorCurvedPanel): intersect the
+	// ray with that cylinder (axis along z, 'radius' in front of the panel) instead of the flat plane
+	float curveRadius = 0.f;
+	if (m_usingWinlatorXR && gXR->GetWinlatorModeVr() == 1 && g_pGame->GetMenu() && g_pGame->GetMenu()->IsMenuActive())
+		curveRadius = gXR->GetWinlatorMenuCurveRadius();
+	if (curveRadius > 0.f)
+	{
+		float qy = pos.y + curveRadius;
+		float a = dir.x * dir.x + dir.y * dir.y;
+		float b = 2.f * (pos.x * dir.x + qy * dir.y);
+		float c = pos.x * pos.x + qy * qy - curveRadius * curveRadius;
+		float disc = b * b - 4.f * a * c;
+		if (a < 1e-6f || disc < 0.f)
+			return false;
+		// the viewer is inside the cylinder and looks at its inner side: the far root
+		float t = (-b + sqrt(disc)) / (2.f * a);
+		if (t < 0)
+			return false;
+		Vec3 hit = pos + t * dir;
+		float theta = atan2(hit.x, hit.y + curveRadius);
+		x = theta * curveRadius / hudSize.x + 0.5f;
+		y = 0.5f - hit.z / hudSize.y;
+		return (x >= 0 && x <= 1 && y >= 0 && y <= 1);
+	}
 
 	if (dir.y <= 0.01)
 		return false;
@@ -1121,7 +1148,6 @@ bool OpenXRInput::CalcControllerHudIntersection(int hand, float& x, float& y)
 		return false;
 
 	Vec2 intersection(pos.x + t * dir.x, pos.z + t * dir.z);
-	Vec2 hudSize(gXR->GetHudWidth(), gXR->GetHudHeight());
 	Vec2 upperLeft = -.5f * hudSize;
 
 	intersection -= upperLeft;

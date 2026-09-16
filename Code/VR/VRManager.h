@@ -142,7 +142,8 @@ private:
 	// layer would be (fronto-parallel approximation of the HUD pose maintained in gXR)
 	// opaquePanel: draw the captured texture without alpha blending (used for the 2D view panel of
 	// binoculars/scopes/2D cinema, whose alpha channel is not meaningful)
-	void DrawWinlatorHud(int eye, const VRRect& region, bool opaquePanel = false);
+	void DrawWinlatorHud(int eye, const VRRect& region, bool opaquePanel = false, float curveRadius = 0.f);
+	void DrawWinlatorCurvedPanel(int eye, const VRRect& region, float radius);
 	// Force the game window borderless and pinned to the X-screen top-left (0,0) at full size. WinlatorXR
 	// reads the frame-sync pixel at screen (0,0) and stops rendering the stereo view if it can't find it;
 	// a title bar or an offset window would shift our composited frame. Re-asserted each frame, only
@@ -152,6 +153,9 @@ private:
 	// menu button = Esc, ...). In-game those would double up with our own packet-driven input, so the
 	// mouse/keyboard input devices are disabled while playing and re-enabled for the flat menus.
 	void UpdateDesktopInputBlock();
+	// applies <Crysis>\crysisvr_quest.cfg (Quest performance settings), see VRManager.cpp
+	void ApplyWinlatorQuestConfig();
+	bool m_questConfigMissingLogged = false;
 	bool m_keyboardBlocked = false;
 	bool m_mouseBlocked = false;
 	float m_menuEnterTime = -1.f;

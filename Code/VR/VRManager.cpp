@@ -85,8 +85,93 @@ bool VRManager::Init()
 	hooks::InstallVirtualFunctionHook("SmartObjectEvent", gEnv->pAISystem, &IAISystem::SmartObjectEvent, &AI_SmartObjectEvent_Hook);
 	hooks::InstallVirtualFunctionHook("SetPostEffectParamFloat", gEnv->p3DEngine, &I3DEngine::SetPostEffectParam, &I3DEngine_SetPostEffectParam_Hook);
 
+	if (gXR->IsUsingWinlatorXR())
+		ApplyWinlatorQuestConfig();
+
 	m_initialized = true;
 	return true;
+}
+
+void VRManager::ApplyWinlatorQuestConfig()
+{
+	// <Crysis>\crysisvr_quest.cfg holds the Quest performance settings (quality groups, view distances,
+	// render height). Crysis re-applies the player profile's graphics options and game.cfg after
+	// system.cfg, which would undo them, so the file is applied by the mod itself: at start-up and
+	// whenever the game is entered from a menu or loading screen. Only values that differ are set.
+	HMODULE crySystem = GetModuleHandleA("CrySystem.dll");
+	char path[MAX_PATH] = "";
+	if (!crySystem || !GetModuleFileNameA(crySystem, path, MAX_PATH))
+		return;
+	char* slash = strrchr(path, '\\');
+	if (!slash)
+		return;
+	*slash = 0;                              // ...\Crysis\Bin32
+	slash = strrchr(path, '\\');
+	if (!slash)
+		return;
+	strcpy(slash + 1, "crysisvr_quest.cfg"); // ...\Crysis\crysisvr_quest.cfg
+
+	FILE* file = fopen(path, "r");
+	if (!file)
+	{
+		if (!m_questConfigMissingLogged)
+			CryLogAlways("[WinlatorXR] %s not found - using the normal game settings", path);
+		m_questConfigMissingLogged = true;
+		return;
+	}
+
+	int changed = 0;
+	char line[512];
+	while (fgets(line, sizeof(line), file))
+	{
+		// strip comments ("--", "//", ";") and the line break
+		for (char* p = line; *p; ++p)
+		{
+			if ((p[0] == '-' && p[1] == '-') || (p[0] == '/' && p[1] == '/') || p[0] == ';' || p[0] == '\r' || p[0] == '\n')
+			{
+				*p = 0;
+				break;
+			}
+		}
+		char* eq = strchr(line, '=');
+		if (!eq)
+			continue;
+		*eq = 0;
+
+		// trim name and value, drop quotes around the value
+		char* name = line;
+		while (*name == ' ' || *name == '\t') ++name;
+		for (char* e = name + strlen(name); e > name && (e[-1] == ' ' || e[-1] == '\t'); --e) e[-1] = 0;
+		char* value = eq + 1;
+		while (*value == ' ' || *value == '\t' || *value == '"') ++value;
+		for (char* e = value + strlen(value); e > value && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '"'); --e) e[-1] = 0;
+		if (!*name || !*value)
+			continue;
+
+		ICVar* cvar = gEnv->pConsole->GetCVar(name);
+		if (!cvar)
+		{
+			CryLogAlways("[WinlatorXR] quest cfg: unknown setting %s", name);
+			continue;
+		}
+
+		bool same;
+		if (cvar->GetType() == CVAR_STRING)
+			same = stricmp(cvar->GetString(), value) == 0;
+		else
+			same = fabsf(cvar->GetFVal() - (float)atof(value)) < 0.0001f;
+		if (same)
+			continue;
+
+		CryFixedStringT<64> oldValue = cvar->GetString();
+		cvar->Set(value);
+		CryLogAlways("[WinlatorXR] quest cfg: %s = %s (was %s)", name, value, oldValue.c_str());
+		++changed;
+	}
+	fclose(file);
+
+	if (changed)
+		CryLogAlways("[WinlatorXR] quest cfg: %d setting(s) applied from %s", changed, path);
 }
 
 void VRManager::Shutdown()
@@ -781,6 +866,9 @@ void VRManager::Update()
 	{
 		m_wasInMenu = false;
 		RecalibrateView();
+		// the profile / options menu may have changed graphics settings in the meantime
+		if (gXR->IsUsingWinlatorXR())
+			ApplyWinlatorQuestConfig();
 	}
 
 	bool showHudFixed= g_pGame->GetHUD() && g_pGame->GetHUD()->ShouldDisplayHUDFixed();
@@ -1538,6 +1626,14 @@ void VRManager::ComposeWinlatorXRFrame()
 	// where head movement would change nothing.
 	bool panel2D = !inMenu && renderMode == RM_2D && gXR->ArePosesValid() && m_hudView.Get() != nullptr
 		&& g_pGameCVars->vr_winlatorxr_2d_panel != 0;
+	// Menus and loading screens: like on PC, show them on a panel fixed in the room (the HUD pose is set
+	// by SetHudInFrontOfPlayer while a menu is open) inside a head-tracked frame. WinlatorXR's flat
+	// screen mode would keep the menu glued to the view. The mouse cursor is placed where the controller
+	// points (OpenXRInput::Update); WinlatorXR still delivers the trigger as a left click.
+	bool menuPanel = inMenu && gXR->ArePosesValid() && m_hudView.Get() != nullptr
+		&& g_pGameCVars->vr_winlatorxr_menu_panel != 0;
+	panel2D = panel2D || menuPanel;
+	float panelCurve = menuPanel ? gXR->GetWinlatorMenuCurveRadius() : 0.f;
 
 	D3D10StateGuard stateGuard(m_device.Get());
 	ID3D10RenderTargetView* rtvs[1] = { rtv.Get() };
@@ -1588,7 +1684,7 @@ void VRManager::ComposeWinlatorXRFrame()
 		gVRRenderUtils->FillRect(full, ColorF(0.f, 0.f, 0.f, 1.f), false);
 		if (aer)
 		{
-			DrawWinlatorHud(aerEye, full, true);
+			DrawWinlatorHud(aerEye, full, true, panelCurve);
 			gVRRenderUtils->FillRect(VRRect(0, 0, 8, 8), ColorF(syncId / 255.f, 0.f, aerEye == 1 ? 1.f : 0.f, 1.f), false);
 			gXR->SetWinlatorFrameMode(1, 2);
 		}
@@ -1597,7 +1693,7 @@ void VRManager::ComposeWinlatorXRFrame()
 			int halfWidth = width / 2;
 			for (int eye = 0; eye < 2; ++eye)
 			{
-				DrawWinlatorHud(eye, VRRect(eye * halfWidth, 0, halfWidth, height), true);
+				DrawWinlatorHud(eye, VRRect(eye * halfWidth, 0, halfWidth, height), true, panelCurve);
 			}
 			gVRRenderUtils->FillRect(VRRect(0, 0, 8, 8), ColorF(syncId / 255.f, 0.f, 0.f, 1.f), false);
 			gXR->SetWinlatorFrameMode(1, 1);
@@ -1605,8 +1701,8 @@ void VRManager::ComposeWinlatorXRFrame()
 	}
 	else
 	{
-		// flat frame (menu, loading screen, or the 2D modes with vr_winlatorxr_2d_panel 0): let
-		// WinlatorXR show the back buffer as-is on its virtual screen
+		// flat frame (menus with vr_winlatorxr_menu_panel 0, before the first head pose, or the 2D modes
+		// with vr_winlatorxr_2d_panel 0): let WinlatorXR show the back buffer on its virtual screen
 		gXR->SetWinlatorFrameMode(2, 0);
 	}
 
@@ -1615,11 +1711,16 @@ void VRManager::ComposeWinlatorXRFrame()
 	gVRRenderUtils->FillRect(full, ColorF(0.f, 0.f, 0.f, 1.f), true);
 }
 
-void VRManager::DrawWinlatorHud(int eye, const VRRect& region, bool opaquePanel)
+void VRManager::DrawWinlatorHud(int eye, const VRRect& region, bool opaquePanel, float curveRadius)
 {
 	// the 2D view panel is the scene itself, so it is shown even when the in-game HUD is hidden
 	if (!m_hudView || (!opaquePanel && !gXR->IsHudVisible()))
 		return;
+	if (curveRadius > 0.f)
+	{
+		DrawWinlatorCurvedPanel(eye, region, curveRadius);
+		return;
+	}
 
 	// The HUD quad pose/size are maintained in gXR exactly like for the OpenXR quad layer (see
 	// SetHudAttachedToHead etc.). Project the quad centre into head space and draw it as a
@@ -1659,6 +1760,82 @@ void VRManager::DrawWinlatorHud(int eye, const VRRect& region, bool opaquePanel)
 	VRRect dest((int)floorf(x0 + 0.5f), (int)floorf(y0 + 0.5f), (int)floorf(x1 - x0 + 0.5f), (int)floorf(y1 - y0 + 0.5f));
 	// never bleed outside this eye's region (matters for side-by-side)
 	gVRRenderUtils->DrawTextureRect(m_hudView.Get(), dest, &region, opaquePanel ? VRRenderUtils::RB_OPAQUE : VRRenderUtils::RB_ALPHA);
+}
+
+static VRRect IntersectRects(const VRRect& a, const VRRect& b)
+{
+	int x0 = max(a.x, b.x), y0 = max(a.y, b.y);
+	int x1 = min(a.x + a.w, b.x + b.w), y1 = min(a.y + a.h, b.y + b.h);
+	return VRRect(x0, y0, max(x1 - x0, 0), max(y1 - y0, 0));
+}
+
+void VRManager::DrawWinlatorCurvedPanel(int eye, const VRRect& region, float radius)
+{
+	// The panel is bent into a section of a vertical cylinder whose axis lies 'radius' in front of the
+	// panel (towards the viewer), so with radius == viewing distance the whole screen is equally far
+	// away. There is no mesh pipeline here (the fullscreen-triangle shader only stretches a texture over
+	// a viewport), so the cylinder is drawn as narrow vertical strips: each strip gets a viewport that
+	// maps its slice of the texture onto the strip's projected x range and is scissored to that range.
+	// Vertical lines stay straight under projection, so only the strip edges are approximated.
+	const int kStrips = 64;
+
+	float tanl, tanr, tant, tanb;
+	gXR->GetFov(eye, tanl, tanr, tant, tanb);
+	float tanH = max(fabsf(tanl), fabsf(tanr));
+	float tanV = max(fabsf(tant), fabsf(tanb));
+	float width = gXR->GetHudWidth();
+	float height = gXR->GetHudHeight();
+	if (tanH <= 0.f || tanV <= 0.f || width <= 0.f || height <= 0.f)
+		return;
+
+	XrPosef hudPose = gXR->GetHudPose();
+	Matrix34 hud = OpenXRToCrysis(hudPose.orientation, hudPose.position);
+	Matrix34 head = Matrix34(gXR->GetHmdTransform());
+	Matrix34 panelToHead = head.GetInvertedFast() * hud;
+	// the left eye sits half the eye separation to the left of the head centre
+	float eyeX = (eye == 0 ? -0.5f : 0.5f) * gXR->GetWinlatorEyeSeparation();
+	float arc = width / radius;
+
+	float edgeX[kStrips + 1], topY[kStrips + 1], bottomY[kStrips + 1];
+	bool visible[kStrips + 1];
+	for (int i = 0; i <= kStrips; ++i)
+	{
+		float theta = ((float)i / kStrips - 0.5f) * arc;
+		// panel space: x right, y away from the viewer, z up; the panel centre is the origin
+		Vec3 onArc(radius * sinf(theta), radius * cosf(theta) - radius, 0.f);
+		Vec3 top = panelToHead.TransformPoint(onArc + Vec3(0, 0, 0.5f * height));
+		Vec3 bottom = panelToHead.TransformPoint(onArc - Vec3(0, 0, 0.5f * height));
+		visible[i] = top.y > 0.05f && bottom.y > 0.05f;
+		if (!visible[i])
+			continue;
+		float xTop = (top.x - eyeX) / top.y;
+		float xBottom = (bottom.x - eyeX) / bottom.y;
+		edgeX[i] = region.x + region.w * (0.5f + 0.5f * (xTop + xBottom) / (2.f * tanH));
+		topY[i] = region.y + region.h * (0.5f - (top.z / top.y) / (2.f * tanV));
+		bottomY[i] = region.y + region.h * (0.5f - (bottom.z / bottom.y) / (2.f * tanV));
+	}
+
+	for (int i = 0; i < kStrips; ++i)
+	{
+		if (!visible[i] || !visible[i + 1])
+			continue;
+		float x0 = edgeX[i], x1 = edgeX[i + 1];
+		if (x1 - x0 < 0.01f)
+			continue;
+		// viewport covering the whole (virtual, flat) texture so that this strip's slice lands on [x0, x1]
+		float viewportWidth = (x1 - x0) * kStrips;
+		float viewportX = x0 - i * (x1 - x0);
+		float y0 = 0.5f * (topY[i] + topY[i + 1]);
+		float y1 = 0.5f * (bottomY[i] + bottomY[i + 1]);
+		if (fabsf(viewportX) > 30000.f || viewportWidth > 30000.f || fabsf(y0) > 30000.f || y1 - y0 > 30000.f)
+			continue;
+		VRRect dest((int)floorf(viewportX + 0.5f), (int)floorf(y0 + 0.5f), (int)floorf(viewportWidth + 0.5f), (int)floorf(y1 - y0 + 0.5f));
+		int sx0 = (int)floorf(x0 + 0.5f), sx1 = (int)floorf(x1 + 0.5f);
+		VRRect scissor = IntersectRects(VRRect(sx0, region.y, sx1 - sx0, region.h), region);
+		if (scissor.w <= 0 || dest.h <= 0)
+			continue;
+		gVRRenderUtils->DrawTextureRect(m_hudView.Get(), dest, &scissor, VRRenderUtils::RB_OPAQUE);
+	}
 }
 
 void VRManager::EnsureWinlatorXRWindow()

@@ -392,7 +392,21 @@ void OpenXRRuntime::FinishFrame()
 		// telling WinlatorXR how to display it. fov 0/0 = "keep the headset's native FOV", which it then
 		// reports back in every packet and which is what our cameras render with. Controller vibration
 		// is a per-frame level (WinlatorXR applies its own decay), so forward the current amplitudes.
-		WinlatorXR::SendState(m_input.GetWinlatorHapticAmplitude(0), m_input.GetWinlatorHapticAmplitude(1), m_winlatorModeVr, m_winlatorMode3d, 0.f, 0.f);
+		// FOV: send the headset's native FOV back explicitly (x vr_winlatorxr_fov_scale, default 1.0) so
+		// WinlatorXR displays the frame with exactly the FOV our cameras render with. 0/0 would leave the
+		// displayed projection at WinlatorXR's own default. The value is the one latched from the first
+		// packet: WinlatorXR echoes back what we send, so feeding the live value back through a scale
+		// would drift (see the Far Cry VR Quest port).
+		float sendFovX = 0.f, sendFovY = 0.f;
+		if (m_winlatorNativeFovH > 1.f && m_winlatorNativeFovV > 1.f)
+		{
+			float scale = g_pGameCVars ? g_pGameCVars->vr_winlatorxr_fov_scale : 1.f;
+			if (scale < 0.5f || scale > 1.5f)
+				scale = 1.f;
+			sendFovX = m_winlatorNativeFovH * scale;
+			sendFovY = m_winlatorNativeFovV * scale;
+		}
+		WinlatorXR::SendState(m_input.GetWinlatorHapticAmplitude(0), m_input.GetWinlatorHapticAmplitude(1), m_winlatorModeVr, m_winlatorMode3d, sendFovX, sendFovY);
 
 		if (UseWinlatorAER() && m_winlatorModeVr == 1)
 			AdvanceAerEye();
@@ -532,12 +546,30 @@ Vec2i OpenXRRuntime::GetRecommendedRenderSize() const
 {
 	if (m_usingWinlatorXR)
 	{
-		// The eye is rendered at the headset's (symmetric) FOV aspect; height is the resolution knob.
-		// Under WinlatorXR the eye image *is* the game's back buffer (side-by-side halves or, with AER,
-		// the whole frame), which WinlatorXR scales onto the X screen and then onto its square per-eye
-		// framebuffers, so the container screen size should keep this same aspect.
-		int height = max(g_pGameCVars->vr_winlatorxr_render_height, 240);
-		int width = (int)(height * tanf(DEG2RAD(m_winlatorFovH) / 2.f) / tanf(DEG2RAD(m_winlatorFovV) / 2.f));
+		// The eye is rendered at the headset's (symmetric) FOV aspect. Under WinlatorXR the eye image *is*
+		// the game's back buffer (side-by-side halves or, with AER, the whole frame), which is shown on the
+		// X screen and from there in WinlatorXR's per-eye framebuffers. Rendering smaller than the X screen
+		// only gets stretched up again (blurry), so by default (vr_winlatorxr_render_height 0) the eye is
+		// rendered at the full X-screen height, clamped to the screen, as in the Far Cry VR Quest port.
+		// The container screen size should keep the FOV aspect (~1.10, e.g. 1592x1440).
+		float aspect = tanf(DEG2RAD(m_winlatorFovH) / 2.f) / tanf(DEG2RAD(m_winlatorFovV) / 2.f);
+		int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+		int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+		int height = g_pGameCVars->vr_winlatorxr_render_height;
+		if (height <= 0)
+			height = screenHeight > 0 ? screenHeight : 1440;
+		height = max(height, 240);
+		int width = (int)(height * aspect);
+		if (screenWidth > 0 && width > screenWidth)
+		{
+			height = (int)(height * screenWidth / (float)width);
+			width = screenWidth;
+		}
+		if (screenHeight > 0 && height > screenHeight)
+		{
+			width = (int)(width * screenHeight / (float)height);
+			height = screenHeight;
+		}
 		return Vec2i(width, height);
 	}
 
@@ -873,6 +905,15 @@ void OpenXRRuntime::CreateHudSwapchain(int width, int height)
 // WinlatorXR backend
 // ---------------------------------------------------------------------------------------------------
 
+float OpenXRRuntime::GetWinlatorMenuCurveRadius() const
+{
+	float radius = g_pGameCVars->vr_winlatorxr_menu_curve_radius;
+	if (radius <= 0.f || m_hudDisplayWidth <= 0.f)
+		return 0.f;
+	// never bend the screen further than a half circle
+	return max(radius, m_hudDisplayWidth / gf_PI);
+}
+
 bool OpenXRRuntime::UseWinlatorAER() const
 {
 	return m_usingWinlatorXR && g_pGameCVars && g_pGameCVars->vr_winlatorxr_aer != 0;
@@ -919,6 +960,13 @@ void OpenXRRuntime::UpdateWinlatorXRPose()
 	// symmetric FOV as reported by the headset runtime (degrees); ignore obviously bogus values
 	if (state.fovH >= 40.f && state.fovH <= 150.f && state.fovV >= 40.f && state.fovV <= 150.f)
 	{
+		// latch the TRUE native FOV from the first packet only; later packets echo what we send
+		if (m_winlatorNativeFovH <= 1.f || m_winlatorNativeFovV <= 1.f)
+		{
+			m_winlatorNativeFovH = state.fovH;
+			m_winlatorNativeFovV = state.fovV;
+			CryLogAlways("[WinlatorXR] native FOV: horz %.1f deg  vert %.1f deg", state.fovH, state.fovV);
+		}
 		if (fabsf(state.fovH - m_winlatorFovH) > 1e-3f || fabsf(state.fovV - m_winlatorFovV) > 1e-3f)
 		{
 			m_winlatorFovH = state.fovH;

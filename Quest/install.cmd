@@ -45,6 +45,9 @@ if exist "%CRYDIR%\Bin32" (
   copy /Y "%SRC%Bin32\*" "%CRYDIR%\Bin32\" >nul
 )
 
+echo  Installing Quest performance settings to "%CRYDIR%\crysisvr_quest.cfg" ...
+copy /Y "%SRC%crysisvr_quest.cfg" "%CRYDIR%\crysisvr_quest.cfg" >nul
+
 echo  Applying VR settings to "%CRYDIR%\system.cfg" ...
 if not exist "%CRYDIR%\system.cfg" type nul > "%CRYDIR%\system.cfg"
 findstr /i /c:"vr_winlatorxr_aer" "%CRYDIR%\system.cfg" >nul 2>&1
@@ -60,7 +63,7 @@ echo  ============================================================
 echo   Mod installed. REMAINING MANUAL STEPS ^(WinlatorXR UI^):
 echo(
 echo   1^) Container settings for THIS container:
-echo        - Screen size : 1792x1624  ^(or 1591x1440; keep ~1.10 aspect^)
+echo        - Screen size : 1592x1440  ^(keep ~1.10 aspect^)
 echo        - DX wrapper  : DXVK ^(must include d3d10core.dll^)
 echo        - Graphics    : wrapper / Turnip
 echo        - Drive D:    : mapped to /sdcard/Download

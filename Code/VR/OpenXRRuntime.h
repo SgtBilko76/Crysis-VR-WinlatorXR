@@ -62,6 +62,9 @@ public:
 	float GetWinlatorFloorOffset() const { return m_winlatorFloorOffsetValid ? m_winlatorFloorOffset : 0.f; }
 	// what to tell WinlatorXR to do with the frame that was just composed (see WinlatorXR::SendState)
 	void SetWinlatorFrameMode(int modeVr, int mode3d) { m_winlatorModeVr = modeVr; m_winlatorMode3d = mode3d; }
+	int GetWinlatorModeVr() const { return m_winlatorModeVr; }
+	// radius of the curved menu screen (a vertical cylinder around the viewer), 0 = flat
+	float GetWinlatorMenuCurveRadius() const;
 
 private:
 	OpenXRInput m_input;
@@ -111,6 +114,9 @@ private:
 	float m_winlatorEyeSeparation = 0.064f;
 	float m_winlatorFovH = 90.f;
 	float m_winlatorFovV = 90.f;
+	// native FOV latched from the first packet (0 = not seen yet), sent back every frame
+	float m_winlatorNativeFovH = 0.f;
+	float m_winlatorNativeFovV = 0.f;
 	// WinlatorXR poses live in OpenXR LOCAL space (origin = headset at session start, not the floor).
 	// Protocol 0.5 also reports the head's height above the floor, from which we derive this offset
 	// to lift all poses (head and controllers) into a floor-relative frame like the STAGE space the

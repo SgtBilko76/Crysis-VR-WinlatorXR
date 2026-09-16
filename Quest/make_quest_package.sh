@@ -28,7 +28,7 @@ mkdir -p "$PACKAGE_DIR/Bin32" "$PACKAGE_DIR/Bin64"
 # build (no-op when up to date) and copy everything install.bat / install32.bat would copy
 python3 "$REPO/tools/xbuild/build_vrmod.py" --install "$PACKAGE_DIR"
 
-for f in README_QUEST.md README_INSTALL.txt install.cmd crysisvr_quest_settings.cfg CrysisVR.desktop; do
+for f in README_QUEST.md README_INSTALL.txt install.cmd crysisvr_quest_settings.cfg crysisvr_quest.cfg CrysisVR.desktop; do
   cp "$QUEST/$f" "$PACKAGE_DIR/"
 done
 

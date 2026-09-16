@@ -6,5 +6,5 @@ StartupWMClass=CrysisVR.exe
 
 [Extra Data]
 container_id=1
-screenSize=1792x1624
+screenSize=1592x1440
 execArgs=

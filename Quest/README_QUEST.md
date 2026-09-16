@@ -27,6 +27,7 @@ protocol for tracking/input, composing the stereo frame into the game window.
    - `Bin64/`, `Bin32/` — `CrysisVR.exe` launcher + haptics DLLs (go into the game's Bin folders)
    - `install.cmd` — in-container installer
    - `crysisvr_quest_settings.cfg` — tuned settings appended to `system.cfg`
+   - `crysisvr_quest.cfg` — performance settings (details, view distance, render height), copied to `D:\Crysis`
    - `CrysisVR.desktop` — the WinlatorXR shortcut template
 5. A **USB cable** + **adb** on a PC (for copying files), or a file manager on
    the headset.
@@ -61,15 +62,14 @@ In WinlatorXR → **Containers** tab → **add a new container** (it'll be
 
 | Setting | Value | Why |
 |---|---|---|
-| **Screen size** | `1792x1624` | Sharp; **aspect must be ~1.10** (see note) |
+| **Screen size** | `1592x1440` | **Aspect must be ~1.10** (see note) |
 | **Graphics driver** | wrapper / Turnip | The Adreno wrapper the fork ships |
 | **DX wrapper** | **DXVK** | Direct3D 10 → Vulkan. The DXVK package must include `d3d10core.dll` (all recent ones do) |
 | **Drive `D:`** | `/sdcard/Download` | So `D:\Crysis` resolves — **essential** |
 
 > **Aspect rule:** WinlatorXR renders each eye into a *square* framebuffer, so
 > the screen size **must keep ~1.10 width:height** (the headset's FOV aspect) or
-> the image looks squeezed. Good values: `1792x1624` (sharp) or `1591x1440`
-> (smoother). **Bad:** anything near-square like `1660x1600`.
+> the image looks squeezed. Default: `1592x1440`; `1792x1624` is sharper but slower. **Bad:** anything near-square like `1660x1600`.
 
 ### 4. Run the installer inside the container
 Create a one-shot shortcut (or use any file manager/terminal in the container):
@@ -96,23 +96,40 @@ right `screenSize` and launches the **32-bit** game, `D:\Crysis\Bin32\CrysisVR.e
 From WinlatorXR's **Shortcuts** tab, tap **CrysisVR** (or launch it from a
 frontend). First boot takes several minutes (Box64 + shader compilation).
 **Wear the headset** during boot — if it reads as off-face, the Quest suspends
-the app and it freezes. The intro videos and menus are shown flat on a virtual
-screen; stereo + head tracking start once a level is loaded.
+the app and it freezes. The intro videos are shown flat on a virtual screen;
+the menus and loading screens appear on a curved screen standing in the room,
+and stereo + head tracking of the game world start once a level is loaded.
 
 ---
 
-## Recommended settings (already in `crysisvr_quest_settings.cfg`)
+## Performance settings (`D:\Crysis\crysisvr_quest.cfg`)
+
+The mod applies `crysisvr_quest.cfg` when the game starts and every time you return
+to the game from a menu or loading screen, so it wins over the in-game graphics
+options and the player profile. Edit it to trade detail for frame rate; delete it
+to use the in-game options instead. The defaults:
+
+| Setting | Value | Notes |
+|---|---|---|
+| `vr_winlatorxr_render_height` | `0` | Per-eye render height; `0` = full screen height (sharpest). E.g. `1080` for more fps, but blurrier |
+| `sys_spec_*` | `1` | Quality groups on Low, which also turns shadows off |
+| `sys_spec_Texture` | `3` | Textures stay on High; Low would make everything blurry |
+| `r_TexturesFilteringQuality`, `r_DetailTextures` | `0`, `1` | Sharp texture filtering and detail textures despite Low shading |
+| `e_view_dist_ratio` | `30` | Object view distance (Low default 40) |
+| `e_view_dist_ratio_detail` / `_vegetation` | `10` | Detail objects and vegetation (Low default 15) |
+| `e_lod_ratio` | `2` | Simpler models sooner (Low default 3) |
+| `e_max_view_dst` | commented out | Far clipping plane in metres; uncomment to cut distant terrain |
+
+## Other settings (already in `crysisvr_quest_settings.cfg`)
 
 | Setting | Value | Notes |
 |---|---|---|
 | `vr_winlatorxr_aer` | `1` | **Alternate-eye rendering** — one full-resolution eye per frame |
-| `vr_winlatorxr_render_height` | `1200` | Per-eye render height; width follows the headset FOV. Raise for sharpness, lower for fps |
 | `vr_winlatorxr_max_fps` | `0` | Uncapped (WinlatorXR's own 72 fps cap quantises to 36/18 fps) |
 | `vr_seated_mode` | `1` | Comfortable; crouch with the stick, not physically |
 | `vr_height_offset` | `0.0` | Eye-height tweak (metres). Adjust to taste |
 | `vr_turn_mode` | `1` | Snap turning |
-| `sys_spec` | `1` | Low graphics preset — Crysis is heavy; raise at your own risk |
-| screen (`.desktop`) | `1792x1624` | Sharp preset |
+| screen (`.desktop`) | `1592x1440` | Matches the container screen size |
 
 All `vr_*` values can also be changed in-game from the **VR Settings** menu or
 the console; they are saved to the profile's `game.cfg`.
@@ -145,8 +162,8 @@ Differences to the PC bindings: the suit menu moved from the right stick click
 to **Y** and the game menu to the **left menu button**, because WinlatorXR
 reserves the right stick click and maps the menu button to Esc.
 
-In the flat menus, WinlatorXR's own controller pointer is the mouse:
-**trigger = click**, **menu button = Esc/back**.
+In the menus, point the **right controller** at the curved screen to move the
+mouse cursor: **trigger = click**, **left menu button = Esc/back**.
 
 ---
 
@@ -163,8 +180,12 @@ In the flat menus, WinlatorXR's own controller pointer is the mouse:
   in a head-tracked view (binoculars at your left hand, scopes and cutscenes
   fixed in front of you) over a black background. The panel always faces you.
   `vr_winlatorxr_2d_panel 0` restores the old flat WinlatorXR screen.
-- **Resolution ceiling:** keep the ~1.10 aspect (e.g. `1792x1624` or
-  `1591x1440`). The game is a 32-bit process here, so do not exceed ~1792 wide
+- **Menus and loading screens** stand 5 m in front of you on a curved screen
+  (placed where you look when the menu opens). `vr_winlatorxr_menu_curve_radius`
+  sets the curvature (0 = flat); `vr_winlatorxr_menu_panel 0` restores the old
+  flat WinlatorXR screen that follows your head.
+- **Resolution ceiling:** keep the ~1.10 aspect (e.g. `1592x1440` or
+  `1792x1624`). The game is a 32-bit process here, so do not exceed ~1792 wide
   and keep `vr_winlatorxr_render_height` moderate (address space).
 - **WinlatorXR container backup/export** is unreliable — hence these manual
   setup steps rather than a prefix image.
@@ -176,7 +197,7 @@ In the flat menus, WinlatorXR's own controller pointer is the mouse:
 
 | Symptom | Fix |
 |---|---|
-| Image **squeezed/stretched** | Screen size isn't ~1.10 aspect — use `1792x1624` or `1591x1440` |
+| Image **squeezed/stretched** | Screen size isn't ~1.10 aspect — use `1592x1440` |
 | **No stereo / no head tracking** (flat, frozen view in a level) | The window must be borderless at (0,0) so WinlatorXR finds the sync pixel — the mod forces this automatically; if it persists, relaunch. Avoid the dawn builds. |
 | Game never gets past a black window | DXVK package lacks D3D10 (`d3d10core.dll`) — pick another DXVK version in the container settings |
 | "Failed to load ...VRMod.dll, Error 126" | You launched `Bin64`; this WinlatorXR build has no 64-bit Direct3D. Use `Bin32\CrysisVR.exe` |

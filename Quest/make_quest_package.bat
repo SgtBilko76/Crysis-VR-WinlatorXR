@@ -26,6 +26,7 @@ copy /Y "%CURRENT_DIR%README_QUEST.md" "%PACKAGE_DIR%\"
 copy /Y "%CURRENT_DIR%README_INSTALL.txt" "%PACKAGE_DIR%\"
 copy /Y "%CURRENT_DIR%install.cmd" "%PACKAGE_DIR%\"
 copy /Y "%CURRENT_DIR%crysisvr_quest_settings.cfg" "%PACKAGE_DIR%\"
+copy /Y "%CURRENT_DIR%crysisvr_quest.cfg" "%PACKAGE_DIR%\"
 copy /Y "%CURRENT_DIR%CrysisVR.desktop" "%PACKAGE_DIR%\"
 
 powershell -NoProfile -Command "Compress-Archive -Path '%PACKAGE_DIR%' -DestinationPath '%ZIP_FILE%' -CompressionLevel Optimal -Force"

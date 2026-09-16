@@ -11,6 +11,8 @@ Package contents:
   Mods\VRMod\                 - the VR mod (VRMod.dll for 32/64 bit, Game assets)
   Bin32\, Bin64\              - CrysisVR.exe launcher + haptics DLLs
   crysisvr_quest_settings.cfg - VR cvars the installer appends to system.cfg
+  crysisvr_quest.cfg          - performance settings (details, view distance),
+                                copied to D:\Crysis and applied by the mod
   CrysisVR.desktop            - ready-made WinlatorXR launch shortcut template
   README_QUEST.md             - full walkthrough, controls, troubleshooting
 
@@ -29,7 +31,7 @@ SETUP - do these in order
    the stereo pipeline.
 
 1) Create a container in WinlatorXR and set:
-     - Screen size : 1792x1624   (or 1591x1440 for smoother; keep ~1.10 aspect)
+     - Screen size : 1592x1440   (keep ~1.10 aspect)
      - DX wrapper  : DXVK
      - Graphics    : wrapper / Turnip
      - Drive  D:   : mapped to /sdcard/Download
@@ -51,7 +53,7 @@ SETUP - do these in order
    CrysisVR.desktop, set its container_id to your container):
      Exec:        wine D:\Crysis\Bin32\CrysisVR.exe
      Launch args: (none)
-     screenSize:  1792x1624   (match the container)
+     screenSize:  1592x1440   (match the container)
 
    USE THE 32-BIT LAUNCHER (Bin32). WinlatorXR cats-27 only ships DXVK for
    32-bit programs; Bin64\CrysisVR.exe fails with "Failed to load ...VRMod.dll
@@ -79,12 +81,14 @@ CONTROLS (right-handed defaults)
 NOTES / TROUBLESHOOTING
 --------------------------------------------------------------------------
   - Performance: Crysis is CPU-bound and Box64 has to emulate it; expect
-    20-40 fps. AER (alternate-eye) + render height 1200 are the defaults.
-    Lower vr_winlatorxr_render_height / sys_spec for more speed.
+    20-40 fps. AER (alternate-eye), full-screen render height, Low details and
+    shorter view distances are the defaults. Tune them in
+    D:\Crysis\crysisvr_quest.cfg; the mod re-applies that file whenever you
+    return to the game, so it wins over the in-game graphics options.
   - No stereo / no head tracking: the mod forces the window borderless at
     (0,0) automatically; if it persists, relaunch, and make sure you are on
     cats-27 (not dawn).
-  - Image squeezed: screen size isn't ~1.10 aspect - use 1792x1624/1591x1440.
+  - Image squeezed: screen size isn't ~1.10 aspect - use 1592x1440.
   - Low fps everywhere: charge the headset >50% (it throttles when low).
   - Game log: C:\users\xuser\Documents\My Games\Crysis VR\Game.log inside the
     container; lines tagged [WinlatorXR] show how far the mod got.
