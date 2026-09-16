@@ -1,4 +1,4 @@
-# Crysis VR — Meta Quest 3 (Standalone) via WinlatorXR — BETA 0.2
+# Crysis VR — Meta Quest 3 (Standalone) via WinlatorXR — BETA 0.3
 
 Play **Crysis (2007)** in VR **standalone on a Meta Quest 3**, via the
 [`crysis_vrmod`](https://github.com/fholger/crysis_vrmod) mod running under
@@ -113,6 +113,7 @@ to use the in-game options instead. The defaults:
 | `vr_winlatorxr_render_height` | `0` | Per-eye render height; `0` = full screen height (sharpest). E.g. `1080` for more fps, but blurrier |
 | `sys_spec_*` | `1` | Quality groups on Low, which also turns shadows off |
 | `sys_spec_Texture` | `3` | Textures stay on High; Low would make everything blurry |
+| `sys_spec_Water` | `3` | Water stays on High; Low draws the ocean surface across the sky in VR |
 | `r_TexturesFilteringQuality`, `r_DetailTextures` | `0`, `1` | Sharp texture filtering and detail textures despite Low shading |
 | `e_view_dist_ratio` | `30` | Object view distance (Low default 40) |
 | `e_view_dist_ratio_detail` / `_vegetation` | `10` | Detail objects and vegetation (Low default 15) |

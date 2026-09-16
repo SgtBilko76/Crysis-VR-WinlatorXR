@@ -12,7 +12,7 @@
 # ============================================================================
 set -euo pipefail
 
-VERSION="${1:-0.2}"
+VERSION="${1:-0.3}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 QUEST="$REPO/Quest"
 PACKAGE_DIR="$QUEST/CrysisVR-Installer"

@@ -1,4 +1,4 @@
-CRYSIS VR (Meta Quest / WinlatorXR) - MOD INSTALLER - BETA 0.2
+CRYSIS VR (Meta Quest / WinlatorXR) - MOD INSTALLER - BETA 0.3
 ==============================================================
 
 This package installs the Crysis VR mod + tuned settings onto an EXISTING
