@@ -3,6 +3,9 @@
 
 # Crysis Quest VR Mod
 
+[![Sponsor](https://img.shields.io/badge/Sponsor-SgtBilko76-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/SgtBilko76)
+
+
 [![Ko-Fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/fholger)
 
 [Crysis VR website](https://crysis.vrmods.eu)
