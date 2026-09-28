@@ -50,6 +50,8 @@ Installer/assembly
 # Quest package build outputs
 Quest/CrysisVR-Installer/
 Quest/CrysisVR-Quest/
+Quest/CrysisVR-Dawn-*/
+Quest/.dawn-staging/
 Quest/*.zip
 Bin32/
 Bin64/

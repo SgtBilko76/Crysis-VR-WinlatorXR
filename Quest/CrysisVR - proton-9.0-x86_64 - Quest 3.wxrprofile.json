@@ -1,0 +1,32 @@
+{
+  "format": "winlatorxr-shortcut-profile",
+  "version": 1,
+  "game": "CrysisVR",
+  "container": "CrysisVR",
+  "wineVersion": "proton-9.0-x86_64",
+  "device": "Quest 3",
+  "settings": {
+    "box64Version": "0.4.2",
+    "gstreamerWorkaround": "0",
+    "simTouchScreen": "0",
+    "screenSize": "1792x1624",
+    "autoclose": "1",
+    "sharpnessEffect": "None",
+    "sharpnessLevel": "0",
+    "sharpnessDenoise": "0",
+    "useReshade": "0",
+    "useTrackIR": "0",
+    "graphicsDriver": "wrapper",
+    "graphicsDriverConfig": "version=adrenotools-v819.2_Quest3_Pico4Ultra;blacklistedExtensions=;maxDeviceMemory=0;adrenotoolsTurnip=1;frameSync=Never",
+    "dxwrapper": "dxvk",
+    "ddrawrapper": "dd7to9-v1.7",
+    "dxwrapperConfig": "version=1.10.1,framerate=0,maxDeviceMemory=0,async=1,asyncCache=1,vkd3dVersion=2.12-0,vkd3dLevel=12_1",
+    "audioDriver": "pulseaudio",
+    "emulator": "box64",
+    "box64Preset": "PERFORMANCE",
+    "rcfileId": "0",
+    "fexcoreVersion": "2605",
+    "startupSelection": "1",
+    "cpuList": "0,1,2,3,4,5"
+  }
+}

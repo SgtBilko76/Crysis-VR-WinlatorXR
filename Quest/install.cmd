@@ -63,7 +63,7 @@ echo  ============================================================
 echo   Mod installed. REMAINING MANUAL STEPS ^(WinlatorXR UI^):
 echo(
 echo   1^) Container settings for THIS container:
-echo        - Screen size : 1592x1440  ^(keep ~1.10 aspect^)
+echo        - Screen size : 1792x1624  ^(keep ~1.10 aspect^)
 echo        - DX wrapper  : DXVK ^(must include d3d10core.dll^)
 echo        - Graphics    : wrapper / Turnip
 echo        - Drive D:    : mapped to /sdcard/Download

@@ -62,14 +62,14 @@ In WinlatorXR → **Containers** tab → **add a new container** (it'll be
 
 | Setting | Value | Why |
 |---|---|---|
-| **Screen size** | `1592x1440` | **Aspect must be ~1.10** (see note) |
+| **Screen size** | `1792x1624` | **Aspect must be ~1.10** (see note) |
 | **Graphics driver** | wrapper / Turnip | The Adreno wrapper the fork ships |
 | **DX wrapper** | **DXVK** | Direct3D 10 → Vulkan. The DXVK package must include `d3d10core.dll` (all recent ones do) |
 | **Drive `D:`** | `/sdcard/Download` | So `D:\Crysis` resolves — **essential** |
 
 > **Aspect rule:** WinlatorXR renders each eye into a *square* framebuffer, so
 > the screen size **must keep ~1.10 width:height** (the headset's FOV aspect) or
-> the image looks squeezed. Default: `1592x1440`; `1792x1624` is sharper but slower. **Bad:** anything near-square like `1660x1600`.
+> the image looks squeezed. Default: `1792x1624`; `1592x1440` is blurrier but a bit faster. **Bad:** anything near-square like `1660x1600`.
 
 ### 4. Run the installer inside the container
 Create a one-shot shortcut (or use any file manager/terminal in the container):
@@ -129,7 +129,7 @@ to use the in-game options instead. The defaults:
 | `vr_seated_mode` | `1` | Comfortable; crouch with the stick, not physically |
 | `vr_height_offset` | `0.0` | Eye-height tweak (metres). Adjust to taste |
 | `vr_turn_mode` | `1` | Snap turning |
-| screen (`.desktop`) | `1592x1440` | Matches the container screen size |
+| screen (`.desktop`) | `1792x1624` | Matches the container screen size |
 
 All `vr_*` values can also be changed in-game from the **VR Settings** menu or
 the console; they are saved to the profile's `game.cfg`.
@@ -183,8 +183,8 @@ In the flat menus, WinlatorXR's own controller pointer is the mouse:
 - **Menus** use WinlatorXR's flat screen, which follows your head.
   `vr_winlatorxr_menu_panel 1` (experimental) shows them on a flat panel fixed
   in the room instead, with the right controller ray as the mouse.
-- **Resolution ceiling:** keep the ~1.10 aspect (e.g. `1592x1440` or
-  `1792x1624`). The game is a 32-bit process here, so do not exceed ~1792 wide
+- **Resolution ceiling:** keep the ~1.10 aspect (e.g. `1792x1624` or
+  `1592x1440`). The game is a 32-bit process here, so do not exceed ~1792 wide
   and keep `vr_winlatorxr_render_height` moderate (address space).
 - **WinlatorXR container backup/export** is unreliable — hence these manual
   setup steps rather than a prefix image.
@@ -196,7 +196,7 @@ In the flat menus, WinlatorXR's own controller pointer is the mouse:
 
 | Symptom | Fix |
 |---|---|
-| Image **squeezed/stretched** | Screen size isn't ~1.10 aspect — use `1592x1440` |
+| Image **squeezed/stretched** | Screen size isn't ~1.10 aspect — use `1792x1624` |
 | **No stereo / no head tracking** (flat, frozen view in a level) | The window must be borderless at (0,0) so WinlatorXR finds the sync pixel — the mod forces this automatically; if it persists, relaunch. Avoid the dawn builds. |
 | Game never gets past a black window | DXVK package lacks D3D10 (`d3d10core.dll`) — pick another DXVK version in the container settings |
 | "Failed to load ...VRMod.dll, Error 126" | You launched `Bin64`; this WinlatorXR build has no 64-bit Direct3D. Use `Bin32\CrysisVR.exe` |
