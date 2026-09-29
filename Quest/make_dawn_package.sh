@@ -6,8 +6,9 @@
 #
 #    Quest/make_dawn_package.sh [version]
 #
-#  Unlike CrysisVR-Installer-Beta-*.zip there is no in-container install.cmd:
-#  Dawn users unzip into D:\Crysis and import the .wxrprofile.json.
+#  Same payload as CrysisVR-Installer-Beta-*.zip (Bin32 + Bin64 + Mods/VRMod),
+#  but without install.cmd: Dawn users unzip into D:\Crysis and import the
+#  .wxrprofile.json.
 # ============================================================================
 set -euo pipefail
 
@@ -25,17 +26,11 @@ rm -rf "$STAGING" "$PACKAGE_DIR" "$ZIP_FILE"
 mkdir -p "$STAGING"
 python3 "$REPO/tools/xbuild/build_vrmod.py" --install "$STAGING"
 
-# only the 32-bit launcher is used on the headset (Bin64 has no D3D10 under Box64)
-mkdir -p "$PACKAGE_DIR/Bin32" "$PACKAGE_DIR/Mods/VRMod/Bin32"
-cp "$STAGING/Bin32/CrysisVR.exe" "$STAGING/Bin32/haptic_library.dll" "$STAGING/Bin32/ForceTubeVR_API_x32.dll" "$PACKAGE_DIR/Bin32/"
-cp "$STAGING/Mods/VRMod/Bin32/VRMod.dll" "$PACKAGE_DIR/Mods/VRMod/Bin32/"
-for f in Game info.xml settings.xml README.md LICENSE.txt; do
-  [ -e "$STAGING/Mods/VRMod/$f" ] && cp -r "$STAGING/Mods/VRMod/$f" "$PACKAGE_DIR/Mods/VRMod/"
-done
-rm -rf "$STAGING"
+# the whole payload install.cmd would copy (Bin32 + Bin64 + Mods/VRMod)
+mv "$STAGING" "$PACKAGE_DIR"
 
 cp "$QUEST/crysisvr_quest.cfg" "$PACKAGE_DIR/"
-cp "$QUEST/README_DAWN.txt" "$PACKAGE_DIR/"
+cp "$QUEST/README_DAWN.txt" "$QUEST/README_QUEST.md" "$PACKAGE_DIR/"
 # the tuned settings are the whole system.cfg here (Crysis' stock file only holds a few defaults)
 cp "$QUEST/crysisvr_quest_settings.cfg" "$PACKAGE_DIR/system.cfg"
 cp "$QUEST/$PROFILE" "$PACKAGE_DIR/"

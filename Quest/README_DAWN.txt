@@ -9,14 +9,16 @@ You need your own copy of Crysis (2007, Steam or GOG - NOT Remastered).
 
 WHAT IS IN HERE
 ---------------
-  Bin32\                CrysisVR.exe launcher + haptics DLLs (32-bit: the one
-                        the headset uses; Bin64 has no working D3D10 in Box64)
-  Mods\VRMod\           the VR mod itself
+  Bin32\, Bin64\        CrysisVR.exe launcher + haptics DLLs.
+                        Use the 32-bit one on the headset: Bin64 has no working
+                        D3D10 under Box64.
+  Mods\VRMod\           the VR mod itself (32- and 64-bit)
   system.cfg            tuned startup settings (resolution 1792x1624, window
                         mode, low spec). Replaces Crysis' own system.cfg.
   crysisvr_quest.cfg    performance settings the mod applies while playing
   CrysisVR - proton-9.0-x86_64 - Quest 3.wxrprofile.json
                         the container settings, ready to import into Dawn
+  README_QUEST.md       the full manual (setup, controls, tuning, troubleshooting)
 
 
 INSTALL
