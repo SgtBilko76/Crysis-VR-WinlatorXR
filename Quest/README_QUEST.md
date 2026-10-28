@@ -141,6 +141,8 @@ tanks the frame rate regardless of settings.
 
 ## Controls (Touch controllers, right-handed defaults)
 
+![Crysis VR controller mapping](../docs/controls.webp)
+
 | Input | Action |
 |---|---|
 | Right trigger | Fire |
