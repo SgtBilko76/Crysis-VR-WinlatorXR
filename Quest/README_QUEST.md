@@ -1,5 +1,7 @@
 # Crysis VR — Meta Quest 3 (Standalone) via WinlatorXR — BETA 0.3
 
+**Download, install guide, controls and pictures: [portroyale.online/crysis.html](https://portroyale.online/crysis.html)**
+
 Play **Crysis (2007)** in VR **standalone on a Meta Quest 3**, via the
 [`crysis_vrmod`](https://github.com/fholger/crysis_vrmod) mod running under
 **WinlatorXR** (Wine + Box64 + DXVK on Android). No PC needed at runtime.
